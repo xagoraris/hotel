@@ -1057,6 +1057,7 @@ async function viewTablet(main) {
     <div class="card">
       <h2>Συσκευές</h2>
       <p class="small muted">Στο tablet άνοιξε <b>${esc(tabletUrl)}</b> (ιδανικά «Προσθήκη στην αρχική οθόνη» για πλήρη οθόνη), πάτα «Κωδικός σύνδεσης» στο δωμάτιο και πληκτρολόγησε τον κωδικό στο tablet μέσα σε 15 λεπτά.</p>
+      <p class="small muted">Για <b>smart TV</b> άνοιξε στον browser της τηλεόρασης <b>${esc(new URL("tv.html", location.href).href)}</b> (πλοήγηση με τα βελάκια και OK του τηλεχειριστηρίου). Η σύνδεση με το δωμάτιο γίνεται με τον ίδιο κωδικό.</p>
       ${!S.rooms.length ? `<div class="empty">Δεν υπάρχουν δωμάτια.</div>` : `<div class="table-wrap"><table><thead><tr><th>Δωμάτιο</th><th>Tablet</th><th>Τελευταία επαφή</th><th></th></tr></thead><tbody>
       ${S.rooms.filter(r => r.active).map(r => { const tb = tablets.find(x => x.room_id === r.id); const paired = tb && tb.paired_at;
         return `<tr><td><b>${esc(r.number)}</b></td><td>${paired ? `<span class="badge b-clean">Συνδεδεμένο</span>` : `<span class="badge b-gray">Όχι</span>`}</td>

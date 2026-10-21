@@ -2,6 +2,7 @@
 
 const TOKEN_KEY = "hotel_tablet_token";
 const LANG_KEY = "hotel_tablet_lang";
+const TV = document.body.classList.contains("tv");   // έκδοση τηλεόρασης (tv.html): τηλεχειριστήριο αντί για αφή
 const IDLE_MS = 120000;     // επιστροφή στην αρχική μετά από 2' αδράνειας
 const REFRESH_MS = 60000;   // ανανέωση δεδομένων (π.χ. νέος πελάτης μετά από check-in)
 
@@ -110,10 +111,15 @@ function render() {
   (views[view.name] || renderHome)();
 }
 
-$("#back").onclick = () => {
-  if (view.name === "service") return go(view.from || { name: "home" });
-  go({ name: "home" });
-};
+// Πίσω: κουμπί στην μπάρα, ή Return/Back του τηλεχειριστηρίου (tv.js). Επιστρέφει false αν είμαστε ήδη στην αρχική.
+function goBack() {
+  if (!token || !data || view.name === "home") return false;
+  if (view.name === "service") go(view.from || { name: "home" });
+  else go({ name: "home" });
+  return true;
+}
+window.tvBack = goBack;
+$("#back").onclick = goBack;
 $$(".tb-lang button").forEach(b => b.onclick = () => {
   lang = b.dataset.lang;
   try { localStorage.setItem(LANG_KEY, lang); } catch {}
@@ -193,13 +199,16 @@ function renderCategory() {
   $("#view").innerHTML = `<div class="tb-page"><h1>${k.icon} ${esc(k[lang])}</h1>
     ${data.guest ? "" : `<div class="tb-note">${esc(t().noGuest)}</div>`}
     <div class="tb-svc">${list.map(s => `
-      <div class="tb-card" data-svc="${s.id}">
+      <div class="tb-card" data-svc="${s.id}" tabindex="0" role="button">
         <div class="img" data-img="${s.id}">${safeUrl(s.image_url) ? "" : k.icon}</div>
         <div class="info"><h2 style="margin:0">${esc(L(s, "name"))}</h2><p>${esc(L(s, "description"))}</p></div>
         <div class="tb-price">${esc(priceLabel(s))}</div>
       </div>`).join("")}</div></div>`;
   list.forEach(s => bg($(`[data-img="${s.id}"]`), s.image_url));
-  $$("[data-svc]").forEach(c => c.onclick = () => go({ name: "service", id: Number(c.dataset.svc), from: { name: "category", kind: view.kind } }));
+  $$("[data-svc]").forEach(c => {
+    c.onclick = () => go({ name: "service", id: Number(c.dataset.svc), from: { name: "category", kind: view.kind } });
+    c.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); c.click(); } };
+  });
 }
 
 // ---------------- Φόρμα αιτήματος ----------------
@@ -221,8 +230,12 @@ function renderService() {
       <h2>${t().book}</h2>
       <div class="grid">
         ${isTransfer ? `<div class="field"><label>${t().direction}</label><select name="direction">${Object.entries(t().directions).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></div>` : ""}
-        <div class="field"><label>${t().date}</label><input type="date" name="date" min="${D.today()}" value="${tomorrow}" required></div>
-        <div class="field"><label>${t().time}${timeRequired ? "" : lang === "el" ? " (προαιρετικό)" : " (optional)"}</label><input type="time" name="time" ${timeRequired ? "required" : ""}></div>
+        <div class="field"><label>${t().date}</label>${TV
+          ? `<select name="date">${Array.from({ length: 30 }, (_, i) => D.add(D.today(), i)).map(d => `<option value="${d}"${d === tomorrow ? " selected" : ""}>${esc(fmtDate(d))}</option>`).join("")}</select>`
+          : `<input type="date" name="date" min="${D.today()}" value="${tomorrow}" required>`}</div>
+        <div class="field"><label>${t().time}${timeRequired ? "" : lang === "el" ? " (προαιρετικό)" : " (optional)"}</label>${TV
+          ? `<select name="time"><option value="">—</option>${Array.from({ length: 72 }, (_, i) => { const m = 360 + i * 15; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; }).map(x => `<option>${x}</option>`).join("")}</select>`
+          : `<input type="time" name="time" ${timeRequired ? "required" : ""}>`}</div>
         <div class="field"><label>${t().persons}</label><select name="persons">${Array.from({ length: maxP }, (_, i) => `<option${i === 1 ? " selected" : ""}>${i + 1}</option>`).join("")}</select></div>
         ${isTransfer ? `<div class="field"><label>${t().flight}</label><input name="flight" maxlength="40"></div>
           <div class="field"><label>${t().destination}</label><input name="destination" maxlength="120"></div>` : ""}

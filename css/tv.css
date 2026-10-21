@@ -1,0 +1,44 @@
+/* Οθόνη δωματίου για smart TV: διαβάζεται από απόσταση, εστίαση με τηλεχειριστήριο. */
+html.tv { font-size: 1.3vw; }                 /* 1920 πλάτος ≈ 25px */
+@media (max-width: 1100px) { html.tv { font-size: 18px; } }
+body.tv { font-size: 1rem; cursor: none; overflow-x: hidden; }
+body.tv::-webkit-scrollbar { display: none; }
+
+body.tv input, body.tv select, body.tv textarea { font-size: 1rem; min-height: 2.6rem; }
+body.tv .btn { min-height: 2.8rem; font-size: 1rem; padding: .5rem 1.4rem; }
+body.tv label { font-size: .85rem; }
+
+body.tv .tb-top { padding: .7rem 2.5rem; }
+body.tv .tb-back { width: 2.6rem; height: 2.6rem; font-size: 1.8rem; }
+body.tv .tb-title b { font-size: 1.1rem; }
+body.tv .tb-title span { font-size: .85rem; }
+body.tv .tb-clock { font-size: 1.4rem; }
+body.tv .tb-lang button { font-size: .85rem; min-width: 2.6rem; padding: .4rem .7rem; }
+
+body.tv .tb-main { max-width: none; padding: 1.4rem 2.5rem 3.5rem; }
+body.tv .tb-hero { min-height: 32vh; }
+body.tv .tb-hero h1 { font-size: 2.3rem; }
+body.tv .tb-hero .in { width: 100%; box-sizing: border-box; }
+body.tv .tb-hero p { font-size: 1.1rem; max-width: 60vw; }
+body.tv .tb-tiles { grid-template-columns: repeat(4, 1fr); gap: 1.1rem; }
+body.tv .tb-tile { min-height: 7rem; }
+body.tv .tb-tile .ic { font-size: 2.2rem; }
+body.tv .tb-svc .img { width: 9rem; height: 6.5rem; }
+body.tv .tb-form .grid { grid-template-columns: repeat(3, 1fr); }
+body.tv .tb-pair { max-width: 28rem; }
+
+/* Εστίαση: ευδιάκριτη από τον καναπέ. */
+body.tv :focus { outline: none; }
+body.tv .tb-tile:focus, body.tv .tb-svc .tb-card:focus, body.tv .btn:focus,
+body.tv .tb-back:focus, body.tv .tb-lang button:focus {
+  outline: .22rem solid #E8B04B; outline-offset: .18rem; transform: scale(1.04);
+  box-shadow: 0 .6rem 1.6rem rgba(0,0,0,.25); position: relative; z-index: 2;
+}
+body.tv input:focus, body.tv select:focus, body.tv textarea:focus { outline: .2rem solid #E8B04B; outline-offset: .1rem; }
+body.tv .tb-tile, body.tv .tb-svc .tb-card, body.tv .btn { transition: transform .12s, box-shadow .12s; }
+
+.tv-hint {
+  position: fixed; right: 1.2rem; bottom: .8rem; z-index: 20; display: flex; gap: .6rem; align-items: center;
+  font-size: .75rem; color: rgba(255,255,255,.9); background: rgba(22,50,79,.85); border-radius: 999px; padding: .3rem .9rem;
+}
+.tv-hint b { border: 1px solid rgba(255,255,255,.7); border-radius: 6px; padding: 0 .35rem; }

@@ -1171,9 +1171,9 @@ function editSection(x) {
 }
 
 // ======================================================================
-// Channel manager (διαχειριστής): σύνδεση με Channex, αντιστοίχιση τύπων δωματίων, ιστορικό
+// Channel manager (διαχειριστής): σύνδεση με WebHotelier ή Channex, αντιστοίχιση τύπων δωματίων, ιστορικό
 // ======================================================================
-let cmRoomTypes = null;   // τύποι δωματίων του Channex από τον τελευταίο έλεγχο σύνδεσης
+let cmRoomTypes = null;   // τύποι δωματίων του channel manager από τον τελευταίο έλεγχο σύνδεσης
 async function channelCall(action, btn) {
   return busy(btn, async () => {
     const { data, error } = await sb.functions.invoke("channel-sync", { body: { action } });
@@ -1197,22 +1197,40 @@ async function viewChannels(main) {
   const hookUrl = `${HOTEL_CONFIG.url}/functions/v1/channel-sync?token=${cfg.webhook_token}`;
   const dir = { in: "⬇ Κράτηση", out: "⬆ Διαθεσιμότητα", info: "ℹ" };
   const mapFor = id => map.find(m => m.room_type_id === id);
+  const prov = cfg.provider || "webhotelier";
+  const P = prov === "webhotelier"
+    ? { name: "WebHotelier", room: "Room code στη WebHotelier", roomPh: "π.χ. DBL" }
+    : { name: "Channex", room: "Room Type στο Channex", roomPh: "Room Type ID" };
+  const ready = cfg.has_key && (prov !== "webhotelier" || cfg.api_username);
 
   main.innerHTML = `
   <div class="page-head"><h1>Channel manager</h1>
     ${cfg.enabled ? `<span class="badge b-clean">Ενεργό</span>` : `<span class="badge b-gray">Ανενεργό</span>`}</div>
-  <div class="alert info">Οι κρατήσεις από Booking.com, Airbnb, Expedia κ.λπ. μπαίνουν αυτόματα μέσω <b>Channex.io</b>, και κάθε αλλαγή εδώ στέλνει τη διαθεσιμότητα πίσω, ώστε να μη γίνεται overbooking.
-    Ο συγχρονισμός γίνεται κάθε 2 λεπτά και αμέσως όταν το Channex στέλνει ειδοποίηση (webhook).</div>
+  <div class="alert info">Οι κρατήσεις από Booking.com, Airbnb, Expedia κ.λπ. (και από τη μηχανή κρατήσεων) μπαίνουν αυτόματα μέσω <b>${P.name}</b>, και κάθε αλλαγή εδώ στέλνει τη διαθεσιμότητα πίσω, ώστε να μη γίνεται overbooking.
+    Ο συγχρονισμός γίνεται κάθε 5 λεπτά και αμέσως όταν ο ${P.name} στέλνει την κράτηση στο webhook.</div>
   ${cfg.last_error ? `<div class="alert err"><b>Τελευταίο σφάλμα:</b> ${esc(cfg.last_error)}</div>` : ""}
   <div class="cols">
     <form class="card" id="cf">
       <h2>1. Σύνδεση</h2>
-      <div class="field"><label>Περιβάλλον</label><select name="environment">
-        <option value="staging"${cfg.environment === "staging" ? " selected" : ""}>Δοκιμαστικό (staging.channex.io)</option>
-        <option value="production"${cfg.environment === "production" ? " selected" : ""}>Παραγωγή (app.channex.io)</option></select></div>
-      <div class="field"><label>Κλειδί API (Channex → Profile → API Keys)</label>
-        <input name="api_key" type="password" autocomplete="off" placeholder="${cfg.has_key ? `Αποθηκευμένο (…${esc(cfg.key_hint)}). Άφησέ το κενό για να μείνει.` : "Επικόλλησε το κλειδί"}"></div>
-      <div class="field"><label>Property ID (Channex → Properties)</label><input name="property_id" value="${esc(cfg.property_id)}" autocomplete="off"></div>
+      <div class="field"><label>Πάροχος</label><select name="provider">
+        <option value="webhotelier"${prov === "webhotelier" ? " selected" : ""}>WebHotelier</option>
+        <option value="channex"${prov === "channex" ? " selected" : ""}>Channex.io</option></select></div>
+      <div data-prov="webhotelier">
+        <div class="field"><label>Όνομα χρήστη API (Hotelier API account από τη WebHotelier)</label>
+          <input name="api_username" value="${esc(cfg.api_username)}" autocomplete="off"></div>
+        <div class="field"><label>Κωδικός API</label>
+          <input name="wh_password" type="password" autocomplete="new-password" placeholder="${cfg.has_key && prov === "webhotelier" ? "Αποθηκευμένος. Άφησέ τον κενό για να μείνει." : "Ο κωδικός του API account"}"></div>
+        <div class="field"><label>Κωδικός καταλύματος (property code, π.χ. όπως στο …/availability/<b>CODE</b>)</label>
+          <input name="wh_property" value="${prov === "webhotelier" ? esc(cfg.property_id) : ""}" autocomplete="off" class="mono"></div>
+      </div>
+      <div data-prov="channex">
+        <div class="field"><label>Περιβάλλον</label><select name="environment">
+          <option value="staging"${cfg.environment === "staging" ? " selected" : ""}>Δοκιμαστικό (staging.channex.io)</option>
+          <option value="production"${cfg.environment === "production" ? " selected" : ""}>Παραγωγή (app.channex.io)</option></select></div>
+        <div class="field"><label>Κλειδί API (Channex → Profile → API Keys)</label>
+          <input name="api_key" type="password" autocomplete="off" placeholder="${cfg.has_key && prov === "channex" ? `Αποθηκευμένο (…${esc(cfg.key_hint)}). Άφησέ το κενό για να μείνει.` : "Επικόλλησε το κλειδί"}"></div>
+        <div class="field"><label>Property ID (Channex → Properties)</label><input name="cx_property" value="${prov === "channex" ? esc(cfg.property_id) : ""}" autocomplete="off"></div>
+      </div>
       <label class="check" style="margin-bottom:1rem"><input type="checkbox" name="enabled" ${cfg.enabled ? "checked" : ""}> Ενεργός αυτόματος συγχρονισμός</label>
       <div class="row"><button class="btn primary">Αποθήκευση</button><button type="button" class="btn" id="test">Έλεγχος σύνδεσης</button></div>
       <div id="testOut" style="margin-top:.8rem"></div>
@@ -1224,23 +1242,25 @@ async function viewChannels(main) {
         <dt>Αλλαγές προς αποστολή</dt><dd>${cfg.pending}</dd>
       </dl>
       <div class="row" style="margin-top:1rem">
-        <button class="btn" id="syncNow" ${cfg.has_key ? "" : "disabled"}>Συγχρονισμός τώρα</button>
-        <button class="btn" id="fullPush" ${cfg.has_key ? "" : "disabled"} title="Στέλνει ξανά τη διαθεσιμότητα για τις επόμενες 500 ημέρες">Πλήρης αποστολή διαθεσιμότητας</button>
+        <button class="btn" id="syncNow" ${ready ? "" : "disabled"}>Συγχρονισμός τώρα</button>
+        <button class="btn" id="fullPush" ${ready ? "" : "disabled"} title="Στέλνει ξανά τη διαθεσιμότητα για τις επόμενες 500 ημέρες">Πλήρης αποστολή διαθεσιμότητας</button>
       </div>
       <h3 style="margin-top:1.2rem">Webhook</h3>
-      <p class="small muted">Στο Channex → Webhooks → Create: Event «booking», Callback URL το παρακάτω. Χωρίς webhook οι κρατήσεις έρχονται πάλι, απλώς έως και 2 λεπτά αργότερα.</p>
+      ${prov === "webhotelier"
+        ? `<p class="small muted">Στη WebHotelier, στις ρυθμίσεις του API account → Booking notifications: Endpoint το παρακάτω, Mode <b>PUSH</b>, Format <b>JSON</b>. Χωρίς webhook οι κρατήσεις έρχονται πάλι, απλώς έως και 5 λεπτά αργότερα.</p>`
+        : `<p class="small muted">Στο Channex → Webhooks → Create: Event «booking», Callback URL το παρακάτω. Χωρίς webhook οι κρατήσεις έρχονται πάλι, απλώς έως και 5 λεπτά αργότερα.</p>`}
       <div class="row" style="flex-wrap:nowrap"><input readonly value="${esc(hookUrl)}" id="hook"><button class="btn" id="copyHook">Αντιγραφή</button></div>
-      <p class="small"><button class="linkish" id="newToken">Νέο μυστικό token</button> <span class="muted">(αν διέρρευσε ο σύνδεσμος· μετά ενημέρωσε το webhook στο Channex)</span></p>
+      <p class="small"><button class="linkish" id="newToken">Νέο μυστικό token</button> <span class="muted">(αν διέρρευσε ο σύνδεσμος· μετά ενημέρωσε το webhook στον ${P.name})</span></p>
     </div>
   </div>
   <div class="card">
     <h2>2. Αντιστοίχιση τύπων δωματίων</h2>
-    <p class="small muted">Κάθε τύπος δωματίου εδώ πρέπει να αντιστοιχεί σε έναν «Room Type» του Channex. Πάτα πρώτα «Έλεγχος σύνδεσης» για να εμφανιστούν σε λίστα, αλλιώς επικόλλησε το ID του. Κρατήσεις για τύπους χωρίς αντιστοίχιση δεν εισάγονται και εμφανίζονται ως σφάλμα στο ιστορικό.</p>
-    ${S.types.length ? `<div class="table-wrap"><table><thead><tr><th>Τύπος εδώ</th><th>Δωμάτια</th><th>Room Type στο Channex</th></tr></thead><tbody>
+    <p class="small muted">Κάθε τύπος δωματίου εδώ πρέπει να αντιστοιχεί σε έναν τύπο δωματίου του ${P.name}. Πάτα πρώτα «Έλεγχος σύνδεσης» για να εμφανιστούν σε λίστα, αλλιώς γράψε τον κωδικό του. Κρατήσεις για τύπους χωρίς αντιστοίχιση δεν εισάγονται και εμφανίζονται ως σφάλμα στο ιστορικό, γι' αυτό κάνε την αντιστοίχιση <b>πριν</b> ενεργοποιήσεις τον συγχρονισμό.</p>
+    ${S.types.length ? `<div class="table-wrap"><table><thead><tr><th>Τύπος εδώ</th><th>Δωμάτια</th><th>${P.room}</th></tr></thead><tbody>
       ${S.types.map(t => { const m = mapFor(t.id); const cur = m ? m.external_room_type_id : "";
         return `<tr><td><b>${esc(t.name)}</b>${t.active ? "" : ` <span class="small muted">(ανενεργός)</span>`}</td><td>${S.rooms.filter(r => r.room_type_id === t.id && r.active).length}</td>
         <td>${cmRoomTypes ? `<select data-map="${t.id}"><option value="">— Χωρίς αντιστοίχιση —</option>${cmRoomTypes.map(x => `<option value="${esc(x.id)}"${x.id === cur ? " selected" : ""}>${esc(x.title)}</option>`).join("")}${cur && !cmRoomTypes.some(x => x.id === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : ""}</select>`
-          : `<input data-map="${t.id}" value="${esc(cur)}" placeholder="Room Type ID" class="mono">`}</td></tr>`; }).join("")}
+          : `<input data-map="${t.id}" value="${esc(cur)}" placeholder="${P.roomPh}" class="mono">`}</td></tr>`; }).join("")}
     </tbody></table></div>
     <button class="btn primary" id="saveMap" style="margin-top:.8rem">Αποθήκευση αντιστοίχισης</button>` : `<div class="empty">Πρόσθεσε πρώτα τύπους δωματίων.</div>`}
   </div>
@@ -1252,14 +1272,29 @@ async function viewChannels(main) {
     </tbody></table></div>` : `<div class="empty">Τίποτα ακόμη.</div>`}
   </div>`;
 
+  const showProv = () => {
+    const v = $("#cf").elements.provider.value;
+    $$("[data-prov]", main).forEach(el => { el.style.display = el.dataset.prov === v ? "" : "none"; });
+  };
+  $("#cf").elements.provider.onchange = showProv;
+  showProv();
+
   $("#cf").onsubmit = ev => {
     ev.preventDefault();
     return busy($("button.primary", ev.target), async () => {
       const f = formData(ev.target);
       try {
         const enabled = ev.target.elements.enabled.checked;
-        if (enabled && (!f.property_id || (!f.api_key && !cfg.has_key))) throw new Error("Για ενεργοποίηση χρειάζονται κλειδί API και Property ID.");
-        must(await sb.rpc("channel_save_settings", { p_environment: f.environment, p_api_key: f.api_key || null, p_property_id: f.property_id, p_enabled: enabled, p_function_url: `${HOTEL_CONFIG.url}/functions/v1/channel-sync` }));
+        const wh = f.provider === "webhotelier";
+        const keep = cfg.has_key && f.provider === prov;   // ίδιος πάροχος: ο αποθηκευμένος κωδικός/κλειδί μένει
+        const secret = (wh ? f.wh_password : f.api_key) || null;
+        const property = wh ? f.wh_property : f.cx_property;
+        if (enabled && (!property || (!secret && !keep) || (wh && !f.api_username)))
+          throw new Error(wh ? "Για ενεργοποίηση χρειάζονται όνομα χρήστη, κωδικός API και κωδικός καταλύματος." : "Για ενεργοποίηση χρειάζονται κλειδί API και Property ID.");
+        must(await sb.rpc("channel_save_settings", { p_provider: f.provider, p_username: wh ? f.api_username : null,
+          p_environment: wh ? null : f.environment, p_api_key: secret, p_property_id: property, p_enabled: enabled,
+          p_function_url: `${HOTEL_CONFIG.url}/functions/v1/channel-sync` }));
+        if (f.provider !== prov) cmRoomTypes = null;
         toast("Αποθηκεύτηκε."); refresh();
       } catch (e) { fail(e); }
     });
@@ -1269,7 +1304,7 @@ async function viewChannels(main) {
     try {
       const r = await channelCall("test", ev.target);
       cmRoomTypes = r.room_types || [];
-      toast(`Σύνδεση με «${r.property || "Channex"}» επιτυχής.`);
+      toast(`Σύνδεση με «${r.property || P.name}» επιτυχής.`);
       refresh();
     } catch (e) { out.innerHTML = `<div class="alert err">${esc(errMsg(e))}</div>`; }
   };
@@ -1277,7 +1312,7 @@ async function viewChannels(main) {
     try { const r = await channelCall(action, ev.target); toast(okMsg(r)); refresh(); }
     catch (e) { fail(e); refresh(); }
   };
-  $("#syncNow").onclick = runAction("sync", r => `Κρατήσεις: ${r.imported} νέες/αλλαγές${r.failed ? `, ${r.failed} με σφάλμα` : ""} · διαθεσιμότητα: ${r.pushed} εύρη.`);
+  $("#syncNow").onclick = runAction("sync", r => `${r.skipped ? "Κρατήσεις: έγινε λήψη πριν από λιγότερο από 5′, ξανά στον επόμενο κύκλο" : `Κρατήσεις: ${r.imported} νέες/αλλαγές${r.failed ? `, ${r.failed} με σφάλμα` : ""}`} · διαθεσιμότητα: ${r.pushed} εύρη.`);
   $("#fullPush").onclick = runAction("full_push", r => `Στάλθηκαν ${r.pushed} εύρη διαθεσιμότητας.`);
   $("#copyHook").onclick = async () => { try { await navigator.clipboard.writeText(hookUrl); toast("Αντιγράφηκε."); } catch { $("#hook").select(); } };
   $("#newToken").onclick = async () => {
@@ -1289,7 +1324,7 @@ async function viewChannels(main) {
     try {
       const rows = $$("[data-map]", main).map(el => ({ room_type_id: Number(el.dataset.map), external_room_type_id: el.value.trim() }));
       const used = rows.filter(r => r.external_room_type_id).map(r => r.external_room_type_id);
-      if (new Set(used).size !== used.length) throw new Error("Δύο τύποι δεν μπορούν να αντιστοιχούν στο ίδιο Room Type του Channex.");
+      if (new Set(used).size !== used.length) throw new Error(`Δύο τύποι δεν μπορούν να αντιστοιχούν στον ίδιο τύπο δωματίου του ${P.name}.`);
       const clear = rows.filter(r => !r.external_room_type_id).map(r => r.room_type_id);
       if (clear.length) must(await sb.from("channel_room_map").delete().in("room_type_id", clear));
       const keep = rows.filter(r => r.external_room_type_id);
@@ -1297,7 +1332,7 @@ async function viewChannels(main) {
       const changed = keep.filter(r => { const m = mapFor(r.room_type_id); return m && m.external_room_type_id !== r.external_room_type_id; }).map(r => r.room_type_id);
       if (changed.length) must(await sb.from("channel_room_map").delete().in("room_type_id", changed));
       if (keep.length) must(await sb.from("channel_room_map").upsert(keep));
-      toast("Η αντιστοίχιση αποθηκεύτηκε. Πάτα «Πλήρης αποστολή διαθεσιμότητας» για να ενημερωθεί το Channex.");
+      toast(`Η αντιστοίχιση αποθηκεύτηκε. Πάτα «Πλήρης αποστολή διαθεσιμότητας» για να ενημερωθεί ο ${P.name}.`);
       refresh();
     } catch (e) { fail(e); }
   });

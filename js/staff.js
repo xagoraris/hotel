@@ -1199,15 +1199,15 @@ async function viewChannels(main) {
   const mapFor = id => map.find(m => m.room_type_id === id);
   const prov = cfg.provider || "webhotelier";
   const P = prov === "webhotelier"
-    ? { name: "WebHotelier", room: "Room code στη WebHotelier", roomPh: "π.χ. DBL" }
-    : { name: "Channex", room: "Room Type στο Channex", roomPh: "Room Type ID" };
+    ? { name: "WebHotelier", the: "η WebHotelier", at: "στη WebHotelier", of: "της WebHotelier", room: "Room code στη WebHotelier", roomPh: "π.χ. DBL" }
+    : { name: "Channex", the: "το Channex", at: "στο Channex", of: "του Channex", room: "Room Type στο Channex", roomPh: "Room Type ID" };
   const ready = cfg.has_key && (prov !== "webhotelier" || cfg.api_username);
 
   main.innerHTML = `
   <div class="page-head"><h1>Channel manager</h1>
     ${cfg.enabled ? `<span class="badge b-clean">Ενεργό</span>` : `<span class="badge b-gray">Ανενεργό</span>`}</div>
   <div class="alert info">Οι κρατήσεις από Booking.com, Airbnb, Expedia κ.λπ. (και από τη μηχανή κρατήσεων) μπαίνουν αυτόματα μέσω <b>${P.name}</b>, και κάθε αλλαγή εδώ στέλνει τη διαθεσιμότητα πίσω, ώστε να μη γίνεται overbooking.
-    Ο συγχρονισμός γίνεται κάθε 5 λεπτά και αμέσως όταν ο ${P.name} στέλνει την κράτηση στο webhook.</div>
+    Ο συγχρονισμός γίνεται κάθε 5 λεπτά και αμέσως όταν ${P.the} στέλνει την κράτηση στο webhook.</div>
   ${cfg.last_error ? `<div class="alert err"><b>Τελευταίο σφάλμα:</b> ${esc(cfg.last_error)}</div>` : ""}
   <div class="cols">
     <form class="card" id="cf">
@@ -1250,12 +1250,12 @@ async function viewChannels(main) {
         ? `<p class="small muted">Στη WebHotelier, στις ρυθμίσεις του API account → Booking notifications: Endpoint το παρακάτω, Mode <b>PUSH</b>, Format <b>JSON</b>. Χωρίς webhook οι κρατήσεις έρχονται πάλι, απλώς έως και 5 λεπτά αργότερα.</p>`
         : `<p class="small muted">Στο Channex → Webhooks → Create: Event «booking», Callback URL το παρακάτω. Χωρίς webhook οι κρατήσεις έρχονται πάλι, απλώς έως και 5 λεπτά αργότερα.</p>`}
       <div class="row" style="flex-wrap:nowrap"><input readonly value="${esc(hookUrl)}" id="hook"><button class="btn" id="copyHook">Αντιγραφή</button></div>
-      <p class="small"><button class="linkish" id="newToken">Νέο μυστικό token</button> <span class="muted">(αν διέρρευσε ο σύνδεσμος· μετά ενημέρωσε το webhook στον ${P.name})</span></p>
+      <p class="small"><button class="linkish" id="newToken">Νέο μυστικό token</button> <span class="muted">(αν διέρρευσε ο σύνδεσμος· μετά ενημέρωσε το webhook ${P.at})</span></p>
     </div>
   </div>
   <div class="card">
     <h2>2. Αντιστοίχιση τύπων δωματίων</h2>
-    <p class="small muted">Κάθε τύπος δωματίου εδώ πρέπει να αντιστοιχεί σε έναν τύπο δωματίου του ${P.name}. Πάτα πρώτα «Έλεγχος σύνδεσης» για να εμφανιστούν σε λίστα, αλλιώς γράψε τον κωδικό του. Κρατήσεις για τύπους χωρίς αντιστοίχιση δεν εισάγονται και εμφανίζονται ως σφάλμα στο ιστορικό, γι' αυτό κάνε την αντιστοίχιση <b>πριν</b> ενεργοποιήσεις τον συγχρονισμό.</p>
+    <p class="small muted">Κάθε τύπος δωματίου εδώ πρέπει να αντιστοιχεί σε έναν τύπο δωματίου ${P.of}. Πάτα πρώτα «Έλεγχος σύνδεσης» για να εμφανιστούν σε λίστα, αλλιώς γράψε τον κωδικό του. Κρατήσεις για τύπους χωρίς αντιστοίχιση δεν εισάγονται και εμφανίζονται ως σφάλμα στο ιστορικό, γι' αυτό κάνε την αντιστοίχιση <b>πριν</b> ενεργοποιήσεις τον συγχρονισμό.</p>
     ${S.types.length ? `<div class="table-wrap"><table><thead><tr><th>Τύπος εδώ</th><th>Δωμάτια</th><th>${P.room}</th></tr></thead><tbody>
       ${S.types.map(t => { const m = mapFor(t.id); const cur = m ? m.external_room_type_id : "";
         return `<tr><td><b>${esc(t.name)}</b>${t.active ? "" : ` <span class="small muted">(ανενεργός)</span>`}</td><td>${S.rooms.filter(r => r.room_type_id === t.id && r.active).length}</td>
@@ -1324,7 +1324,7 @@ async function viewChannels(main) {
     try {
       const rows = $$("[data-map]", main).map(el => ({ room_type_id: Number(el.dataset.map), external_room_type_id: el.value.trim() }));
       const used = rows.filter(r => r.external_room_type_id).map(r => r.external_room_type_id);
-      if (new Set(used).size !== used.length) throw new Error(`Δύο τύποι δεν μπορούν να αντιστοιχούν στον ίδιο τύπο δωματίου του ${P.name}.`);
+      if (new Set(used).size !== used.length) throw new Error(`Δύο τύποι δεν μπορούν να αντιστοιχούν στον ίδιο τύπο δωματίου ${P.of}.`);
       const clear = rows.filter(r => !r.external_room_type_id).map(r => r.room_type_id);
       if (clear.length) must(await sb.from("channel_room_map").delete().in("room_type_id", clear));
       const keep = rows.filter(r => r.external_room_type_id);
@@ -1332,7 +1332,7 @@ async function viewChannels(main) {
       const changed = keep.filter(r => { const m = mapFor(r.room_type_id); return m && m.external_room_type_id !== r.external_room_type_id; }).map(r => r.room_type_id);
       if (changed.length) must(await sb.from("channel_room_map").delete().in("room_type_id", changed));
       if (keep.length) must(await sb.from("channel_room_map").upsert(keep));
-      toast(`Η αντιστοίχιση αποθηκεύτηκε. Πάτα «Πλήρης αποστολή διαθεσιμότητας» για να ενημερωθεί ο ${P.name}.`);
+      toast(`Η αντιστοίχιση αποθηκεύτηκε. Πάτα «Πλήρης αποστολή διαθεσιμότητας» για να ενημερωθεί ${P.the}.`);
       refresh();
     } catch (e) { fail(e); }
   });

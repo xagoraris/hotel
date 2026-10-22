@@ -976,7 +976,7 @@ async function viewRequests(main) {
     <thead><tr><th>Υπηρεσία</th><th>Δωμάτιο / πελάτης</th><th>Πότε</th><th>Άτομα</th><th>Λεπτομέρειες</th><th class="num">Τιμή</th><th>Κατάσταση</th><th></th></tr></thead><tbody>
     ${rows.map(q => `<tr class="click" data-id="${q.id}">
       <td><b>${esc(q.services && q.services.name_el)}</b><div class="small muted">${esc(LBL.kind[q.services && q.services.kind] || "")}</div></td>
-      <td><b>${esc(q.rooms ? q.rooms.number : "—")}</b><div class="small muted">${esc(q.guest_name)}</div></td>
+      <td><b>${esc(q.rooms ? q.rooms.number : "—")}</b>${q.via_qr ? ` <span class="small muted" title="Από το κινητό του πελάτη (QR)">📱</span>` : ""}<div class="small muted">${esc(q.guest_name)}</div></td>
       <td style="white-space:nowrap">${esc(reqWhen(q))}</td>
       <td>${q.persons}</td>
       <td class="small">${reqDetails(q).map(esc).join("<br>")}${q.notes ? `<div class="muted">“${esc(q.notes)}”</div>` : ""}</td>
@@ -1026,6 +1026,46 @@ function openRequest(q) {
 // ======================================================================
 // Tablet δωματίων (διαχειριστής): αρχική σελίδα, πληροφορίες, υπηρεσίες, συσκευές
 // ======================================================================
+// QR δωματίων: φορτώνεται μόνο όταν χρειαστεί.
+let qrLib = null;
+function loadQrLib() {
+  if (qrLib) return qrLib;
+  qrLib = new Promise((ok, bad) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+    sc.onload = () => ok(window.qrcode); sc.onerror = () => { qrLib = null; bad(new Error("Δεν φορτώθηκε η βιβλιοθήκη QR. Έλεγξε τη σύνδεση.")); };
+    document.head.appendChild(sc);
+  });
+  return qrLib;
+}
+const roomQrUrl = r => new URL(`room.html?r=${encodeURIComponent(r.qr_code)}`, location.href).href;
+async function qrSvg(text) {
+  const qrcode = await loadQrLib();
+  const q = qrcode(0, "M"); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+}
+async function printRoomQrs(rooms) {
+  const w = window.open("", "_blank");
+  if (!w) throw new Error("Ο browser μπλόκαρε το νέο παράθυρο. Επίτρεψε τα αναδυόμενα για αυτή τη σελίδα.");
+  const s = S.settings;
+  const cards = [];
+  for (const r of rooms) cards.push(`<div class="c"><div class="h">${esc(s.hotel_name)}</div>
+    <div class="r">Δωμάτιο ${esc(r.number)} · Room ${esc(r.number)}</div>
+    <div class="q">${await qrSvg(roomQrUrl(r))}</div>
+    <div class="t">Σκανάρετε για υπηρεσίες, πληροφορίες και αιτήματα<br><span>Scan for hotel services, information & requests</span></div>
+    ${s.wifi_name ? `<div class="w">Wi‑Fi: <b>${esc(s.wifi_name)}</b>${s.wifi_password ? ` · <b>${esc(s.wifi_password)}</b>` : ""}</div>` : ""}</div>`);
+  w.document.write(`<!doctype html><html lang="el"><head><meta charset="utf-8"><title>QR δωματίων</title><style>
+    @page { size: A4; margin: 12mm; } body { font-family: system-ui, sans-serif; margin: 0; color: #16324F; }
+    .g { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+    .c { border: 1px solid #ccd; border-radius: 6mm; padding: 7mm 6mm; text-align: center; break-inside: avoid; }
+    .h { font-weight: 700; font-size: 15pt; } .r { font-size: 12pt; margin: 1mm 0 4mm; }
+    .q svg { width: 58mm; height: 58mm; } .t { font-size: 10pt; margin-top: 3mm; } .t span { color: #557; }
+    .w { font-size: 10pt; margin-top: 3mm; padding-top: 3mm; border-top: 1px dashed #ccd; }
+    .bar { padding: 10px; text-align: center; } @media print { .bar { display: none; } }
+  </style></head><body><div class="bar"><button onclick="print()">Εκτύπωση</button></div><div class="g">${cards.join("")}</div></body></html>`);
+  w.document.close();
+}
+
 async function viewTablet(main) {
   await loadBase();
   const [sections, services, tablets] = await Promise.all([
@@ -1062,9 +1102,14 @@ async function viewTablet(main) {
       ${S.rooms.filter(r => r.active).map(r => { const tb = tablets.find(x => x.room_id === r.id); const paired = tb && tb.paired_at;
         return `<tr><td><b>${esc(r.number)}</b></td><td>${paired ? `<span class="badge b-clean">Συνδεδεμένο</span>` : `<span class="badge b-gray">Όχι</span>`}</td>
         <td class="small">${paired ? ago(tb.last_seen) : ""}</td>
-        <td class="num"><button class="btn sm" data-pair="${r.id}">Κωδικός σύνδεσης</button>${paired ? ` <button class="btn sm danger" data-unpair="${r.id}">Αποσύνδεση</button>` : ""}</td></tr>`; }).join("")}
+        <td class="num"><button class="btn sm" data-qr="${r.id}">QR</button> <button class="btn sm" data-pair="${r.id}">Κωδικός σύνδεσης</button>${paired ? ` <button class="btn sm danger" data-unpair="${r.id}">Αποσύνδεση</button>` : ""}</td></tr>`; }).join("")}
       </tbody></table></div>`}
     </div>
+  </div>
+  <div class="card">
+    <div class="row"><h2 style="margin:0">QR δωματίων (κινητό πελάτη)</h2><span class="spacer"></span><button class="btn primary sm" id="printQr" ${S.rooms.some(r => r.active) ? "" : "disabled"}>Εκτύπωση όλων</button></div>
+    <p class="small muted">Κάθε δωμάτιο έχει δικό του QR. Ο πελάτης το σκανάρει με το κινητό του, γράφει το επώνυμο της κράτησης (ή τον κωδικό κράτησης) και βλέπει ό,τι και το tablet: πληροφορίες, Wi‑Fi, υπηρεσίες, αιτήματα. Χωρίς εφαρμογή και χωρίς λογαριασμό.
+    Η πρόσβαση ισχύει μόνο όσο διαρκεί η διαμονή του (μέχρι το check-out) και ο επόμενος πελάτης δεν βλέπει τίποτα από τον προηγούμενο. Μετά από 8 λάθος προσπάθειες σε 15 λεπτά το δωμάτιο κλειδώνει προσωρινά.</p>
   </div>
   <div class="card">
     <div class="row"><h2 style="margin:0">Υπηρεσίες</h2><span class="spacer"></span><button class="btn primary sm" id="addSvc">+ Νέα υπηρεσία</button></div>
@@ -1104,6 +1149,24 @@ async function viewTablet(main) {
         <p>και πληκτρολόγησε τον κωδικό:</p>
         <div class="code-box mono">${esc(code)}</div>
         <p class="small muted">Ισχύει για 15 λεπτά και μόνο για μία συσκευή. Αν το δωμάτιο είχε ήδη tablet, αυτό αντικαθίσταται μόλις συνδεθεί το νέο.</p>` });
+    } catch (e) { fail(e); }
+  }));
+  const pq = $("#printQr");
+  if (pq) pq.onclick = () => busy(pq, async () => { try { await printRoomQrs(S.rooms.filter(r => r.active)); } catch (e) { fail(e); } });
+  $$("[data-qr]", main).forEach(b => b.onclick = () => busy(b, async () => {
+    try {
+      const room = roomById(Number(b.dataset.qr));
+      const url = roomQrUrl(room);
+      const m = openModal({ title: `QR δωματίου ${room.number}`, onClose: refresh, body: `
+        <div style="text-align:center"><div style="width:240px;margin:0 auto">${await qrSvg(url)}</div>
+        <p class="mono small" style="word-break:break-all"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p></div>
+        <div class="row" style="justify-content:center"><button type="button" class="btn" id="qrPrint1">Εκτύπωση</button><button type="button" class="btn danger" id="qrNew">Νέο QR</button></div>
+        <p class="small muted">«Νέο QR»: το τυπωμένο QR αυτού του δωματίου σταματά να λειτουργεί (π.χ. αν φωτογραφήθηκε και κυκλοφορεί). Ο πελάτης που ήδη μένει κρατά την πρόσβαση μέχρι το check-out.</p>` });
+      $("#qrPrint1", m.el).onclick = () => printRoomQrs([room]).catch(fail);
+      $("#qrNew", m.el).onclick = async () => {
+        if (!confirm(`Νέο QR για το δωμάτιο ${room.number}; Το τυπωμένο QR θα σταματήσει να λειτουργεί και πρέπει να τυπωθεί ξανά.`)) return;
+        try { must(await sb.rpc("admin_room_new_qr", { p_room: room.id })); toast("Νέο QR. Τύπωσέ το ξανά."); m.close(); } catch (e) { fail(e); }
+      };
     } catch (e) { fail(e); }
   }));
   $$("[data-unpair]", main).forEach(b => b.onclick = () => {

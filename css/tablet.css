@@ -85,3 +85,27 @@ body.tablet label { font-size: .9rem; }
 .tb-pair { max-width: 460px; margin: 8vh auto; text-align: center; }
 .tb-pair input { text-align: center; font-size: 2rem !important; letter-spacing: .25em; text-transform: uppercase; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .tb-note { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: .8rem 1rem; margin-bottom: 1rem; }
+
+/* Κινητό πελάτη (room.html μέσω QR): μικρότερα περιθώρια, δύο στήλες πλακίδια, επιτρέπεται επιλογή κειμένου. */
+body.tablet.mobile { font-size: 16px; user-select: auto; -webkit-user-select: auto; }
+body.mobile input, body.mobile select, body.mobile textarea { font-size: 16px; min-height: 46px; }
+body.mobile .btn { min-height: 48px; font-size: 16px; }
+body.mobile .tb-top { padding: .55rem .8rem; padding-top: calc(.55rem + env(safe-area-inset-top)); gap: .6rem; }
+body.mobile .tb-back { width: 42px; height: 42px; font-size: 1.6rem; }
+body.mobile .tb-clock { display: none; }
+body.mobile .tb-lang button { min-width: 42px; padding: .4rem .55rem; }
+body.mobile .tb-main { padding: .8rem; }
+body.mobile .tb-hero { min-height: 150px; border-radius: 16px; }
+body.mobile .tb-hero .in { padding: 1.1rem 1.2rem; }
+body.mobile .tb-hero h1 { font-size: 1.6rem; }
+body.mobile .tb-hero p { font-size: 1rem; }
+body.mobile .tb-tiles { grid-template-columns: repeat(2, 1fr); gap: .7rem; }
+body.mobile .tb-tile { min-height: 110px; padding: .9rem; border-radius: 14px; }
+body.mobile .tb-tile .ic { font-size: 1.9rem; }
+body.mobile .tb-tile b { font-size: 1rem; }
+body.mobile .tb-card { padding: 1rem; border-radius: 14px; }
+body.mobile .tb-page h1 { font-size: 1.4rem; }
+body.mobile .tb-svc .tb-card { flex-wrap: wrap; gap: .8rem; }
+body.mobile .tb-svc .img { width: 100%; height: 150px; }
+body.mobile .tb-req { flex-wrap: wrap; }
+body.mobile .tb-login { max-width: 460px; margin: 0 auto; }

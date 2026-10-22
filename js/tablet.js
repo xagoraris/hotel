@@ -1,6 +1,9 @@
 // Tablet δωματίου: πληροφορίες ξενοδοχείου και αιτήματα υπηρεσιών (transfer, yachting κ.λπ.).
 
-const TOKEN_KEY = "hotel_tablet_token";
+const MOBILE = document.body.classList.contains("mobile");  // κινητό πελάτη μέσω QR δωματίου (room.html?r=…)
+const QR = MOBILE ? (new URLSearchParams(location.search).get("r") || "").trim() : "";
+const TOKEN_KEY = MOBILE ? "hotel_guest_token" : "hotel_tablet_token";
+const QR_KEY = "hotel_guest_qr";
 const LANG_KEY = "hotel_tablet_lang";
 const TV = document.body.classList.contains("tv");   // έκδοση τηλεόρασης (tv.html): τηλεχειριστήριο αντί για αφή
 const IDLE_MS = 120000;     // επιστροφή στην αρχική μετά από 2' αδράνειας
@@ -30,7 +33,10 @@ const TT = {
     noGuest: "Οι κρατήσεις υπηρεσιών είναι διαθέσιμες μετά το check-in. Για οτιδήποτε, επικοινωνήστε με τη ρεσεψιόν.",
     confirmCancel: "Ακύρωση αυτού του αιτήματος;", estPrice: "Εκτιμώμενη τιμή",
     pairTitle: "Σύνδεση tablet", pairText: "Πληκτρολογήστε τον κωδικό σύνδεσης από την εφαρμογή διαχείρισης (Tablet → Συσκευές).", pair: "Σύνδεση",
-    errors: { ERR_CODE: "Λάθος ή ληγμένος κωδικός.", ERR_NO_GUEST: "Οι κρατήσεις υπηρεσιών είναι διαθέσιμες μετά το check-in.", ERR_SERVICE: "Η υπηρεσία δεν είναι διαθέσιμη.",
+    loginText: "Για την ασφάλειά σας, επιβεβαιώστε τη διαμονή σας με το επώνυμο της κράτησης (όπως στο διαβατήριο/ταυτότητα) ή τον κωδικό κράτησης.",
+    surname: "Επώνυμο ή κωδικός κράτησης", enter: "Είσοδος", noQr: "Σκανάρετε το QR code που βρίσκεται στο δωμάτιό σας.",
+    errors: { ERR_CODE: "Λάθος ή ληγμένος κωδικός.", ERR_LOGIN: "Τα στοιχεία δεν ταιριάζουν με τη διαμονή σε αυτό το δωμάτιο. Δοκιμάστε όπως είναι γραμμένο στην κράτηση ή ρωτήστε τη ρεσεψιόν.",
+      ERR_LOCKED: "Πολλές προσπάθειες. Δοκιμάστε ξανά σε λίγα λεπτά ή ρωτήστε τη ρεσεψιόν.", ERR_QR: "Μη έγκυρο QR code. Ρωτήστε τη ρεσεψιόν.", ERR_NO_GUEST: "Οι κρατήσεις υπηρεσιών είναι διαθέσιμες μετά το check-in.", ERR_SERVICE: "Η υπηρεσία δεν είναι διαθέσιμη.",
       ERR_PERSONS: "Μη έγκυρος αριθμός ατόμων.", ERR_DATE: "Μη έγκυρη ημερομηνία.", ERR_NOTES: "Τα σχόλια είναι πολύ μεγάλα.", ERR_DETAILS: "Μη έγκυρα στοιχεία.",
       ERR_TOO_MANY: "Έχετε ήδη πολλά αιτήματα σε αναμονή. Επικοινωνήστε με τη ρεσεψιόν.", ERR_CANNOT_CANCEL: "Το αίτημα δεν μπορεί πλέον να ακυρωθεί.",
       required: "Συμπληρώστε ημερομηνία και ώρα.", net: "Πρόβλημα σύνδεσης. Δοκιμάστε ξανά.", generic: "Κάτι πήγε στραβά. Δοκιμάστε ξανά." }
@@ -49,7 +55,10 @@ const TT = {
     noGuest: "Service bookings are available after check-in. For anything you need, please contact the reception.",
     confirmCancel: "Cancel this request?", estPrice: "Estimated price",
     pairTitle: "Pair tablet", pairText: "Enter the pairing code from the management app (Tablet → Devices).", pair: "Pair",
-    errors: { ERR_CODE: "Wrong or expired code.", ERR_NO_GUEST: "Service bookings are available after check-in.", ERR_SERVICE: "This service is not available.",
+    loginText: "For your security, please confirm your stay with the surname on the booking (as in your passport/ID) or your booking code.",
+    surname: "Surname or booking code", enter: "Continue", noQr: "Please scan the QR code in your room.",
+    errors: { ERR_CODE: "Wrong or expired code.", ERR_LOGIN: "These details don't match the current stay in this room. Try it exactly as on the booking or ask the reception.",
+      ERR_LOCKED: "Too many attempts. Please try again in a few minutes or ask the reception.", ERR_QR: "Invalid QR code. Please ask the reception.", ERR_NO_GUEST: "Service bookings are available after check-in.", ERR_SERVICE: "This service is not available.",
       ERR_PERSONS: "Invalid number of guests.", ERR_DATE: "Invalid date.", ERR_NOTES: "Comments are too long.", ERR_DETAILS: "Invalid details.",
       ERR_TOO_MANY: "You already have many pending requests. Please contact the reception.", ERR_CANNOT_CANCEL: "This request can no longer be cancelled.",
       required: "Please choose a date and time.", net: "Connection problem. Please try again.", generic: "Something went wrong. Please try again." }
@@ -57,8 +66,15 @@ const TT = {
 };
 
 let token = null;
-try { token = localStorage.getItem(TOKEN_KEY); } catch {}
-let lang = (() => { try { return localStorage.getItem(LANG_KEY) || "en"; } catch { return "en"; } })();
+try {
+  token = localStorage.getItem(TOKEN_KEY);
+  // Κινητό: άλλο QR (άλλο δωμάτιο/ξενοδοχείο) σημαίνει νέα επιβεβαίωση.
+  if (MOBILE && QR && localStorage.getItem(QR_KEY) !== QR) { token = null; localStorage.removeItem(TOKEN_KEY); }
+} catch {}
+let lang = (() => {
+  try { const v = localStorage.getItem(LANG_KEY); if (v) return v; } catch {}
+  return MOBILE && /^el\b/i.test(navigator.language || "") ? "el" : "en";
+})();
 let data = null;
 let view = { name: "home" };
 const t = () => TT[lang];
@@ -126,8 +142,45 @@ $$(".tb-lang button").forEach(b => b.onclick = () => {
   if (!token) renderPair(); else render();
 });
 
+// ---------------- Κινητό: επιβεβαίωση διαμονής ----------------
+let roomInfo = null;
+async function renderLogin() {
+  $("#back").classList.add("hidden");
+  if (!QR) { $("#view").innerHTML = `<div class="tb-card tb-big"><div class="ic">📷</div><p>${esc(t().noQr)}</p></div>`; return; }
+  if (!roomInfo) {
+    try { roomInfo = must(await sb.rpc("guest_room_info", { p_qr: QR })); }
+    catch (e) { $("#view").innerHTML = `<div class="tb-card tb-big"><div class="ic">⚠️</div><p>${esc(errText(e))}</p></div>`; return; }
+  }
+  $("#hotel").textContent = roomInfo.hotel || "";
+  $("#room").textContent = t().room(roomInfo.room);
+  document.title = roomInfo.hotel || "Welcome";
+  $("#view").innerHTML = `
+  <section class="tb-hero" id="hero"><div class="in"><h1>${esc(t().welcome)}</h1><p>${esc(t().room(roomInfo.room))}</p></div></section>
+  <form class="tb-card tb-login" id="lf">
+    <p class="muted">${esc(t().loginText)}</p>
+    <div class="field"><label>${esc(t().surname)}</label><input name="secret" autocomplete="family-name" autocapitalize="words" required></div>
+    <button class="btn primary" style="width:100%">${esc(t().enter)}</button>
+  </form>`;
+  bg($("#hero"), roomInfo.cover_image_url);
+  $("#lf").onsubmit = async ev => {
+    ev.preventDefault();
+    await busy($("button", ev.target), async () => {
+      const showErr = msg => { const o = $(".alert", ev.target); if (o) o.remove(); $("button", ev.target).insertAdjacentHTML("beforebegin", `<div class="alert err">${esc(msg)}</div>`); };
+      try {
+        const tk = must(await sb.rpc("guest_login", { p_qr: QR, p_secret: formData(ev.target).secret }));
+        if (!tk) return showErr(t().errors.ERR_LOGIN);
+        token = tk;
+        try { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(QR_KEY, QR); } catch {}
+        view = { name: "home" };
+        await load();
+      } catch (e) { showErr(errText(e)); }
+    });
+  };
+}
+
 // ---------------- Σύνδεση συσκευής ----------------
 function renderPair() {
+  if (MOBILE) return renderLogin();
   $("#hotel").textContent = "";
   $("#room").textContent = "";
   $("#back").classList.add("hidden");
@@ -306,6 +359,7 @@ setInterval(tick, 10000);
 
 let idleTimer;
 function resetIdle() {
+  if (MOBILE) return;   // στο κινητό του πελάτη δεν γυρνάμε αυτόματα στην αρχική
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     const d = $("dialog"); if (d) d.close();

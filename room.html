@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Welcome</title>
+<meta name="theme-color" content="#16324F">
+
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/tablet.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/tablet.js" defer></script>
+</head>
+<!-- Οθόνη δωματίου στο κινητό του πελάτη: ανοίγει από το QR του δωματίου (room.html?r=<κωδικός>). -->
+<body class="tablet mobile">
+<header class="tb-top">
+  <button class="tb-back hidden" id="back" aria-label="Back">‹</button>
+  <div class="tb-title"><b id="hotel">&nbsp;</b><span id="room"></span></div>
+  <div class="tb-clock" id="clock"></div>
+  <div class="tb-lang"><button data-lang="el">EL</button><button data-lang="en">EN</button></div>
+</header>
+<main class="tb-main" id="view"></main>
+</body>
+</html>

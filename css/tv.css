@@ -42,3 +42,6 @@ body.tv .tb-tile, body.tv .tb-svc .tb-card, body.tv .btn { transition: transform
   font-size: .75rem; color: rgba(255,255,255,.9); background: rgba(22,50,79,.85); border-radius: 999px; padding: .3rem .9rem;
 }
 .tv-hint b { border: 1px solid rgba(255,255,255,.7); border-radius: 6px; padding: 0 .35rem; }
+body.tv .tb-chip:focus, body.tv .tb-qty .btn:focus, body.tv .tb-avoid summary:focus { outline: .22rem solid #E8B04B; outline-offset: .15rem; }
+body.tv .tb-item .img { width: 7rem; height: 5rem; }
+body.tv .tb-qty .btn { min-width: 2.6rem; }

@@ -8,11 +8,13 @@ const LBL = {
   idType: { id_card: "Ταυτότητα", passport: "Διαβατήριο", other: "Άλλο" },
   req: { new: "Νέο", confirmed: "Επιβεβαιωμένο", done: "Ολοκληρώθηκε", cancelled: "Ακυρώθηκε" },
   kind: { transfer: "Transfer", yachting: "Yachting / κρουαζιέρα", tour: "Εκδρομή", spa: "Spa", restaurant: "Εστιατόριο", other: "Άλλο" },
+  order: { new: "Νέα", preparing: "Ετοιμάζεται", delivered: "Παραδόθηκε", cancelled: "Ακυρώθηκε" },
   priceUnit: { per_booking: "Ανά κράτηση", per_person: "Ανά άτομο", on_request: "Κατόπιν επικοινωνίας" },
   direction: { to_airport: "Προς αεροδρόμιο", from_airport: "Από αεροδρόμιο", to_port: "Προς λιμάνι", from_port: "Από λιμάνι", other: "Άλλη διαδρομή" }
 };
 const REQ_CLS = { new: "pending", confirmed: "confirmed", done: "checked_in", cancelled: "cancelled" };
-const badge = (kind, key) => `<span class="badge b-${esc(kind === "req" ? REQ_CLS[key] : key)}">${esc(LBL[kind][key] || key)}</span>`;
+const ORD_CLS = { new: "pending", preparing: "confirmed", delivered: "checked_in", cancelled: "cancelled" };
+const badge = (kind, key) => `<span class="badge b-${esc(kind === "req" ? REQ_CLS[key] : kind === "order" ? ORD_CLS[key] : key)}">${esc(LBL[kind][key] || key)}</span>`;
 const options = (map, sel, empty) =>
   (empty !== undefined ? `<option value="">${esc(empty)}</option>` : "") +
   Object.entries(map).map(([k, v]) => `<option value="${esc(k)}"${k === sel ? " selected" : ""}>${esc(v)}</option>`).join("");
@@ -51,6 +53,8 @@ const ROUTES = {
   calendar:     { title: "Ημερολόγιο",   roles: FRONT,                       render: viewCalendar },
   reservations: { title: "Κρατήσεις",    roles: FRONT,                       render: viewReservations },
   requests:     { title: "Αιτήματα",     roles: FRONT,                       render: viewRequests },
+  orders:       { title: "Παραγγελίες",  roles: FRONT,                       render: viewOrders },
+  dining:       { title: "Εστίαση",      roles: FRONT,                       render: viewDining },
   guests:       { title: "Πελάτες",      roles: FRONT,                       render: viewGuests },
   housekeeping: { title: "Καθαριότητα",  roles: [...FRONT, "housekeeping"],  render: viewHousekeeping },
   rooms:        { title: "Δωμάτια",      roles: ["admin"],                   render: viewRooms },
@@ -201,26 +205,42 @@ function renderShell() {
   if (isFront) { $("#newRes").onclick = () => openReservation(null); startRequestWatch(); }
 }
 
-// Έλεγχος για νέα αιτήματα από τα tablet κάθε 30''.
-let reqWatch = null, lastNewCount = null;
+// Έλεγχος για νέα αιτήματα και παραγγελίες από τα δωμάτια (κάθε 20'').
+let reqWatch = null, lastNewCount = null, lastNewOrders = null;
 function startRequestWatch() {
   clearInterval(reqWatch);
-  lastNewCount = null;
+  lastNewCount = null; lastNewOrders = null;
   const check = async () => {
     if (!S.profile || !FRONT.includes(role())) return clearInterval(reqWatch);
-    const { count, error } = await sb.from("service_requests").select("id", { count: "exact", head: true }).eq("status", "new");
-    if (error) return;
-    const a = $('.nav a[data-route="requests"]');
-    if (a) a.innerHTML = `Αιτήματα${count ? ` <span class="badge b-pending">${count}</span>` : ""}`;
-    if (lastNewCount !== null && count > lastNewCount) {
-      toast("Νέο αίτημα υπηρεσίας από δωμάτιο.");
-      beep();
-      if (location.hash === "#requests") refresh();
+    const [rq, od] = await Promise.all([
+      sb.from("service_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
+      sb.from("orders").select("id", { count: "exact", head: true }).eq("status", "new")
+    ]);
+    if (!rq.error) {
+      const count = rq.count;
+      const a = $('.nav a[data-route="requests"]');
+      if (a) a.innerHTML = `Αιτήματα${count ? ` <span class="badge b-pending">${count}</span>` : ""}`;
+      if (lastNewCount !== null && count > lastNewCount) {
+        toast("Νέο αίτημα υπηρεσίας από δωμάτιο.");
+        beep();
+        if (location.hash === "#requests") refresh();
+      }
+      lastNewCount = count;
     }
-    lastNewCount = count;
+    if (!od.error) {
+      const count = od.count;
+      const a = $('.nav a[data-route="orders"]');
+      if (a) a.innerHTML = `Παραγγελίες${count ? ` <span class="badge b-pending">${count}</span>` : ""}`;
+      if (lastNewOrders !== null && count > lastNewOrders) {
+        toast("Νέα παραγγελία εστίασης.");
+        beep(); setTimeout(beep, 350);
+        if (location.hash === "#orders") refresh();
+      }
+      lastNewOrders = count;
+    }
   };
   check();
-  reqWatch = setInterval(check, 30000);
+  reqWatch = setInterval(check, 20000);
 }
 function beep() {
   try {
@@ -251,7 +271,8 @@ const RES_SELECT = "*, guests(*), rooms(number), room_types(name)";
 const guestName = g => g ? `${g.last_name} ${g.first_name}` : "—";
 const nights = r => D.diff(r.check_in, r.check_out);
 const SHORT = { day: "numeric", month: "short" };
-const balance = r => Number(r.total_price || 0) - Number(r.paid || 0);
+// Υπόλοιπο = διαμονή + έξτρα χρεώσεις δωματίου (εστίαση κ.λπ.) − πληρωμένα.
+const balance = r => Number(r.total_price || 0) + Number(r.extras || 0) - Number(r.paid || 0);
 const roomById = id => S.rooms.find(r => r.id === id);
 const typeById = id => S.types.find(t => t.id === id);
 
@@ -529,13 +550,34 @@ async function openReservation(id, prefill = {}) {
         <div class="field"><label>Πληρωμένα (€)</label><input type="number" step="0.01" min="0" name="paid" value="${r.paid}"></div>
         <div class="field"><label>Υπόλοιπο</label><div id="bal" style="padding:.55rem 0;font-weight:700"></div></div>
       </div>
+      ${id ? `<div id="charges"></div>` : ""}
       <div class="field"><label>Σημειώσεις</label><textarea name="notes">${esc(r.notes)}</textarea></div>
     </fieldset>`
   });
   const form = $("form", m.el);
   const el = n => form.elements[n];
 
-  const updateBalance = () => { $("#bal", form).textContent = money(Number(el("total_price").value || 0) - Number(el("paid").value || 0)); };
+  const updateBalance = () => { $("#bal", form).textContent = money(Number(el("total_price").value || 0) + Number(r.extras || 0) - Number(el("paid").value || 0)); };
+  // Έξτρα χρεώσεις δωματίου (παραγγελίες εστίασης, minibar κ.λπ.)
+  const loadCharges = async () => {
+    const box = $("#charges", form); if (!box) return;
+    const rows = must(await sb.from("reservation_charges").select("*").eq("reservation_id", id).order("created_at"));
+    box.innerHTML = `<div class="small" style="margin:.2rem 0 .8rem">
+      <b>Έξτρα χρεώσεις δωματίου: ${money(r.extras || 0)}</b>
+      ${rows.length ? `<table class="small" style="margin-top:.3rem"><tbody>${rows.map(c => `<tr><td class="muted" style="white-space:nowrap">${new Date(c.created_at).toLocaleString("el-GR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td><td>${esc(c.description)}</td><td class="num"${Number(c.amount) < 0 ? ' style="color:var(--bad)"' : ""}>${money(c.amount)}</td></tr>`).join("")}</tbody></table>` : ""}
+      <div class="row" style="margin-top:.4rem;flex-wrap:nowrap"><input id="chDesc" placeholder="Περιγραφή (π.χ. Minibar, διόρθωση)" maxlength="120"><input id="chAmt" type="number" step="0.01" placeholder="€" style="max-width:7rem"><button type="button" class="btn sm" id="chAdd">+ Χρέωση</button></div>
+      <div class="muted">Αρνητικό ποσό για διόρθωση/έκπτωση. Οι παραγγελίες «Χρέωση στο δωμάτιο» μπαίνουν αυτόματα με την παράδοση.</div></div>`;
+    $("#chAdd", box).onclick = ev => busy(ev.target, async () => {
+      const desc = $("#chDesc", box).value.trim(), amt = Number($("#chAmt", box).value);
+      if (!desc || !amt) return toast("Συμπλήρωσε περιγραφή και ποσό.", "err");
+      try {
+        must(await sb.from("reservation_charges").insert({ reservation_id: id, description: desc, amount: amt }));
+        r.extras = must(await sb.from("reservations").select("extras").eq("id", id).single()).extras;
+        updateBalance(); await loadCharges();
+      } catch (e) { fail(e); }
+    });
+  };
+  loadCharges().catch(fail);
   const calcPrice = () => {
     const t = typeById(Number(el("room_type_id").value));
     const n = D.diff(el("check_in").value, el("check_out").value);
@@ -625,8 +667,8 @@ async function openReservation(id, prefill = {}) {
         if (room && room.status !== "clean" && !confirm(`Το δωμάτιο ${room.number} είναι «${LBL.room[room.status]}». Συνέχεια;`)) return;
       }
       if (target === "cancelled" && !confirm("Ακύρωση της κράτησης;")) return;
-      if (target === "checked_out" && balance({ total_price: f.total_price, paid: f.paid }) > 0 &&
-          !confirm(`Υπάρχει υπόλοιπο ${money(balance({ total_price: f.total_price, paid: f.paid }))}. Συνέχεια με check-out;`)) return;
+      if (target === "checked_out" && balance({ total_price: f.total_price, extras: r.extras, paid: f.paid }) > 0 &&
+          !confirm(`Υπάρχει υπόλοιπο ${money(balance({ total_price: f.total_price, extras: r.extras, paid: f.paid }))}. Συνέχεια με check-out;`)) return;
 
       let newGuest = false;
       if (guestId) must(await sb.from("guests").update(g).eq("id", guestId));
@@ -1021,6 +1063,205 @@ function openRequest(q) {
       toast("Αποθηκεύτηκε."); m.close(); refresh(); startRequestWatch();
     } catch (e) { fail(e); }
   });
+}
+
+
+// ======================================================================
+// Παραγγελίες εστίασης (από tablet / TV / κινητό δωματίων)
+// ======================================================================
+let ordFilter = "open";
+const ALLERGEN_LBL = { gluten: "Γλουτένη", crustaceans: "Καρκινοειδή", eggs: "Αυγά", fish: "Ψάρι", peanuts: "Αράπικο φιστίκι", soy: "Σόγια",
+  milk: "Γάλα", nuts: "Ξηροί καρποί", celery: "Σέλινο", mustard: "Μουστάρδα", sesame: "Σουσάμι", sulphites: "Θειώδη", lupin: "Λούπινο", molluscs: "Μαλάκια" };
+const TAG_LBL = { vegetarian: "Χορτοφαγικό", vegan: "Vegan", gluten_free: "Χωρίς γλουτένη", spicy: "Πικάντικο", local: "Τοπικό", signature: "Πρόταση σεφ" };
+
+async function viewOrders(main) {
+  let q = sb.from("orders").select("*, menu_outlets(name_el, icon), rooms(number), order_items(name_el, qty, notes, price)").limit(200);
+  if (ordFilter === "open") q = q.in("status", ["new", "preparing"]).order("created_at");
+  else q = q.gte("created_at", D.add(D.today(), -2)).order("created_at", { ascending: false });
+  const rows = must(await q);
+  const filters = { open: "Ανοιχτές", recent: "Όλες (2 ημέρες)" };
+  const ago = ts => { const m = Math.round((Date.now() - new Date(ts)) / 60000); return m < 1 ? "τώρα" : m < 60 ? `πριν ${m}'` : new Date(ts).toLocaleString("el-GR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+  main.innerHTML = `
+  <div class="page-head"><h1>Παραγγελίες</h1>
+    ${Object.entries(filters).map(([k, v]) => `<button class="btn sm${k === ordFilter ? " primary" : ""}" data-f="${k}">${v}</button>`).join("")}
+    <button class="btn sm" id="reload">↻</button></div>
+  ${!rows.length ? `<div class="card"><div class="empty">Καμία παραγγελία</div></div>` : `<div class="ord-grid">${rows.map(o => `
+    <div class="card ord ord-${o.status}">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><b style="font-size:1.1rem">${o.deliver_to === "pool" ? `🏊 Πισίνα · ξαπλώστρα ${esc(o.location || "?")}` : `🛏️ Δωμάτιο ${esc(o.rooms ? o.rooms.number : "—")}`}</b>
+          <div class="small muted">${esc(o.guest_name)}${o.deliver_to === "pool" && o.rooms ? ` · δωμ. ${esc(o.rooms.number)}` : ""} · ${esc(o.menu_outlets.icon || "")} ${esc(o.menu_outlets.name_el)} · #${o.id} ${o.via === "qr" ? "📱" : ""}</div></div>
+        <div style="text-align:right">${badge("order", o.status)}<div class="small muted">${ago(o.created_at)}</div></div>
+      </div>
+      <ul class="ord-items">${(o.order_items || []).map(i => `<li><b>${i.qty}×</b> ${esc(i.name_el)}${i.notes ? `<div class="small" style="color:var(--warn)">↳ ${esc(i.notes)}</div>` : ""}</li>`).join("")}</ul>
+      ${o.notes ? `<div class="alert info small">“${esc(o.notes)}”</div>` : ""}
+      <div class="row" style="justify-content:space-between">
+        <span><b>${money(o.total)}</b> <span class="small muted">· ${o.charge_to_room ? "Χρέωση στο δωμάτιο" : "Πληρωμή κατά την παράδοση"}</span></span>
+        <span class="row">
+          ${o.status === "new" ? `<button class="btn ok sm" data-st="preparing" data-id="${o.id}">Αποδοχή</button>` : ""}
+          ${o.status === "preparing" ? `<button class="btn ok sm" data-st="delivered" data-id="${o.id}">Παραδόθηκε</button>` : ""}
+          ${["new", "preparing"].includes(o.status) ? `<button class="btn sm danger" data-st="cancelled" data-id="${o.id}">Ακύρωση</button>` : ""}
+        </span>
+      </div>
+    </div>`).join("")}</div>`}`;
+  $$("[data-f]", main).forEach(b => b.onclick = () => { ordFilter = b.dataset.f; refresh(); });
+  $("#reload").onclick = refresh;
+  $$("[data-st]", main).forEach(b => b.onclick = () => {
+    const st = b.dataset.st;
+    if (st === "cancelled" && !confirm("Ακύρωση της παραγγελίας; Ο πελάτης θα το δει στην οθόνη του.")) return;
+    busy(b, async () => {
+      try { must(await sb.from("orders").update({ status: st }).eq("id", Number(b.dataset.id))); toast(st === "delivered" ? "Παραδόθηκε." : "Αποθηκεύτηκε."); refresh(); startRequestWatch(); }
+      catch (e) { fail(e); }
+    });
+  });
+  clearTimeout(viewOrders.t);
+  viewOrders.t = setTimeout(() => { if (location.hash === "#orders" && !document.querySelector("dialog[open]")) refresh(); }, 30000);
+}
+
+// ======================================================================
+// Εστίαση: σημεία (εστιατόριο, pool bar), κατηγορίες, πιάτα με αλλεργιογόνα
+// Ο διαχειριστής τα επεξεργάζεται· η ρεσεψιόν μπορεί να σημειώνει «εξαντλήθηκε».
+// ======================================================================
+async function viewDining(main) {
+  const admin = role() === "admin";
+  const [outlets, cats, items] = await Promise.all([
+    sb.from("menu_outlets").select("*").order("sort").order("id"),
+    sb.from("menu_categories").select("*").order("sort").order("id"),
+    sb.from("menu_items").select("*").order("sort").order("id")
+  ].map(p => p.then(must)));
+  main.innerHTML = `
+  <div class="page-head"><h1>Εστίαση</h1>${admin ? `<button class="btn primary sm" id="addOutlet">+ Νέο σημείο</button>` : ""}</div>
+  <p class="small muted">Οι κατάλογοι εμφανίζονται στο tablet, την τηλεόραση και το κινητό (QR) του δωματίου, στα ελληνικά και αγγλικά.
+  ${admin ? "" : "Μπορείς να σημειώσεις ότι ένα πιάτο εξαντλήθηκε· την επεξεργασία των καταλόγων την κάνει ο διαχειριστής."}</p>
+  ${!outlets.length ? `<div class="card"><div class="empty">Κανένα σημείο εστίασης.</div></div>` : outlets.map(o => `
+  <div class="card">
+    <div class="row"><h2 style="margin:0">${esc(o.icon || "🍽️")} ${esc(o.name_el)}</h2>
+      ${o.active ? "" : `<span class="badge b-gray">Ανενεργό</span>`}
+      ${o.accepts_orders ? `<span class="badge b-clean">Δέχεται παραγγελίες</span>` : `<span class="badge b-cancelled">Παραγγελίες κλειστές</span>`}
+      <span class="spacer"></span>
+      ${admin ? `<button class="btn sm" data-toggle-orders="${o.id}">${o.accepts_orders ? "Κλείσιμο παραγγελιών" : "Άνοιγμα παραγγελιών"}</button>
+        <button class="btn sm" data-edit-outlet="${o.id}">Ρυθμίσεις</button><button class="btn sm primary" data-add-cat="${o.id}">+ Κατηγορία</button>` : ""}
+    </div>
+    <p class="small muted">${esc([o.hours_el, o.deliver_room && "Παράδοση στο δωμάτιο", o.deliver_pool && "Παράδοση στην πισίνα"].filter(Boolean).join(" · "))}</p>
+    ${cats.filter(c => c.outlet_id === o.id).map(c => `
+      <div class="row" style="margin-top:1rem"><h3 style="margin:0">${esc(c.name_el)} <span class="small muted">${esc(c.name_en || "")}</span></h3>
+        ${c.active ? "" : `<span class="badge b-gray">Κρυφή</span>`}<span class="spacer"></span>
+        ${admin ? `<button class="btn sm" data-edit-cat="${c.id}">Επεξεργασία</button><button class="btn sm primary" data-add-item="${c.id}">+ Πιάτο</button>` : ""}</div>
+      <div class="table-wrap"><table><tbody>
+      ${items.filter(i => i.category_id === c.id).map(i => `<tr${admin ? ` class="click" data-item="${i.id}"` : ""}>
+        <td><b>${esc(i.name_el)}</b>${i.active ? "" : ` <span class="badge b-gray">Κρυφό</span>`}<div class="small muted">${esc(i.name_en || "")}</div></td>
+        <td class="small">${i.allergens.length ? `<span style="color:var(--warn)">${i.allergens.map(a => esc(ALLERGEN_LBL[a])).join(", ")}</span>` : `<span class="muted">Χωρίς αλλεργιογόνα</span>`}
+          ${i.tags.length ? `<div class="muted">${i.tags.map(t => esc(TAG_LBL[t])).join(" · ")}</div>` : ""}</td>
+        <td class="num">${money(i.price)}</td>
+        <td class="num"><button class="btn sm${i.available ? "" : " danger"}" data-avail="${i.id}">${i.available ? "Διαθέσιμο" : "Εξαντλήθηκε"}</button></td>
+      </tr>`).join("") || `<tr><td class="muted small">Κανένα πιάτο.</td></tr>`}
+      </tbody></table></div>`).join("")}
+  </div>`).join("")}`;
+
+  $$("[data-avail]", main).forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    const it = items.find(x => x.id === Number(b.dataset.avail));
+    busy(b, async () => { try { must(await sb.from("menu_items").update({ available: !it.available }).eq("id", it.id)); refresh(); } catch (e) { fail(e); } });
+  });
+  if (!admin) return;
+  $("#addOutlet").onclick = () => editOutlet(null);
+  $$("[data-edit-outlet]", main).forEach(b => b.onclick = () => editOutlet(outlets.find(o => o.id === Number(b.dataset.editOutlet))));
+  $$("[data-toggle-orders]", main).forEach(b => b.onclick = () => {
+    const o = outlets.find(x => x.id === Number(b.dataset.toggleOrders));
+    busy(b, async () => { try { must(await sb.from("menu_outlets").update({ accepts_orders: !o.accepts_orders }).eq("id", o.id)); refresh(); } catch (e) { fail(e); } });
+  });
+  $$("[data-add-cat]", main).forEach(b => b.onclick = () => editCategory(null, Number(b.dataset.addCat)));
+  $$("[data-edit-cat]", main).forEach(b => b.onclick = () => editCategory(cats.find(c => c.id === Number(b.dataset.editCat))));
+  $$("[data-add-item]", main).forEach(b => b.onclick = () => editItem(null, Number(b.dataset.addItem), cats, outlets));
+  $$("tr[data-item]", main).forEach(tr => tr.onclick = () => editItem(items.find(i => i.id === Number(tr.dataset.item)), null, cats, outlets));
+}
+
+// Κοινή φόρμα αποθήκευσης για σημεία / κατηγορίες / πιάτα.
+function diningForm({ title, body, table, id, toRow }) {
+  const m = openModal({ title, body, footer: `<button type="button" class="btn primary" id="dsave">Αποθήκευση</button>` });
+  $("#dsave", m.el).onclick = ev => busy(ev.target, async () => {
+    const form = $("form", m.el);
+    try {
+      const row = toRow(formData(form), form);
+      must(id ? await sb.from(table).update(row).eq("id", id) : await sb.from(table).insert(row));
+      toast("Αποθηκεύτηκε."); m.close(); refresh();
+    } catch (e) { fail(e); }
+  });
+  return m;
+}
+const chk = (name, on, label) => `<label class="check"><input type="checkbox" name="${name}"${on ? " checked" : ""}> ${esc(label)}</label>`;
+
+function editOutlet(o) {
+  o = o || { active: true, accepts_orders: true, deliver_room: true, deliver_pool: false, sort: 0, icon: "🍽️" };
+  diningForm({ title: o.id ? `Σημείο: ${o.name_el}` : "Νέο σημείο εστίασης", table: "menu_outlets", id: o.id, body: `
+    <div class="grid">
+      <div class="field"><label>Όνομα (ελληνικά) *</label><input name="name_el" value="${esc(o.name_el)}" required></div>
+      <div class="field"><label>Όνομα (αγγλικά)</label><input name="name_en" value="${esc(o.name_en)}"></div>
+      <div class="field"><label>Εικονίδιο (emoji)</label><input name="icon" value="${esc(o.icon)}" maxlength="8"></div>
+      <div class="field"><label>Σειρά</label><input type="number" name="sort" value="${o.sort}"></div>
+      <div class="field"><label>Ωράριο (ελληνικά)</label><input name="hours_el" value="${esc(o.hours_el)}" placeholder="Καθημερινά 13:00 – 23:00"></div>
+      <div class="field"><label>Ωράριο (αγγλικά)</label><input name="hours_en" value="${esc(o.hours_en)}" placeholder="Daily 13:00 – 23:00"></div>
+    </div>
+    <div class="field"><label>Περιγραφή (ελληνικά)</label><textarea name="description_el">${esc(o.description_el)}</textarea></div>
+    <div class="field"><label>Περιγραφή (αγγλικά)</label><textarea name="description_en">${esc(o.description_en)}</textarea></div>
+    <div class="row">${chk("accepts_orders", o.accepts_orders, "Δέχεται παραγγελίες")}${chk("deliver_room", o.deliver_room, "Παράδοση στο δωμάτιο")}${chk("deliver_pool", o.deliver_pool, "Παράδοση στην πισίνα")}${chk("active", o.active, "Ενεργό")}</div>`,
+    toRow: (f, form) => {
+      if (!f.name_el) throw new Error("Συμπλήρωσε το όνομα.");
+      const e = form.elements;
+      if (e.accepts_orders.checked && !e.deliver_room.checked && !e.deliver_pool.checked) throw new Error("Διάλεξε τουλάχιστον έναν τρόπο παράδοσης.");
+      return { name_el: f.name_el, name_en: f.name_en || null, icon: f.icon || null, sort: Number(f.sort || 0), hours_el: f.hours_el || null, hours_en: f.hours_en || null,
+        description_el: f.description_el || null, description_en: f.description_en || null,
+        accepts_orders: e.accepts_orders.checked, deliver_room: e.deliver_room.checked, deliver_pool: e.deliver_pool.checked, active: e.active.checked };
+    } });
+}
+
+function editCategory(c, outletId) {
+  c = c || { outlet_id: outletId, active: true, sort: 0 };
+  diningForm({ title: c.id ? `Κατηγορία: ${c.name_el}` : "Νέα κατηγορία", table: "menu_categories", id: c.id, body: `
+    <div class="grid">
+      <div class="field"><label>Όνομα (ελληνικά) *</label><input name="name_el" value="${esc(c.name_el)}" required></div>
+      <div class="field"><label>Όνομα (αγγλικά)</label><input name="name_en" value="${esc(c.name_en)}"></div>
+      <div class="field"><label>Σειρά</label><input type="number" name="sort" value="${c.sort}"></div>
+    </div>${chk("active", c.active, "Εμφανίζεται στον κατάλογο")}`,
+    toRow: (f, form) => {
+      if (!f.name_el) throw new Error("Συμπλήρωσε το όνομα.");
+      return { outlet_id: c.outlet_id, name_el: f.name_el, name_en: f.name_en || null, sort: Number(f.sort || 0), active: form.elements.active.checked };
+    } });
+}
+
+function editItem(i, categoryId, cats, outlets) {
+  i = i || { category_id: categoryId, allergens: [], tags: [], available: true, active: true, sort: 0, price: "" };
+  const catOpts = cats.map(c => { const o = outlets.find(x => x.id === c.outlet_id); return `<option value="${c.id}"${c.id === i.category_id ? " selected" : ""}>${esc(o ? o.name_el : "")} › ${esc(c.name_el)}</option>`; }).join("");
+  diningForm({ title: i.id ? i.name_el : "Νέο πιάτο", table: "menu_items", id: i.id, body: `
+    <div class="grid">
+      <div class="field"><label>Όνομα (ελληνικά) *</label><input name="name_el" value="${esc(i.name_el)}" required></div>
+      <div class="field"><label>Όνομα (αγγλικά)</label><input name="name_en" value="${esc(i.name_en)}"></div>
+      <div class="field"><label>Τιμή (€) *</label><input type="number" step="0.01" min="0" name="price" value="${esc(i.price)}" required></div>
+      <div class="field"><label>Κατηγορία</label><select name="category_id">${catOpts}</select></div>
+    </div>
+    <div class="field"><label>Περιγραφή (ελληνικά)</label><textarea name="description_el">${esc(i.description_el)}</textarea></div>
+    <div class="field"><label>Περιγραφή (αγγλικά)</label><textarea name="description_en">${esc(i.description_en)}</textarea></div>
+    <div class="grid">
+      <div class="field"><label>Φωτογραφία (σύνδεσμος https://…)</label><input type="url" name="image_url" value="${esc(i.image_url)}"></div>
+      <div class="field"><label>Σειρά</label><input type="number" name="sort" value="${i.sort}"></div>
+    </div>
+    <fieldset><legend>Αλλεργιογόνα (Κανονισμός ΕΕ 1169/2011)</legend>
+      <div class="row" style="gap:.3rem 1rem">${Object.entries(ALLERGEN_LBL).map(([k, v]) => chk("al_" + k, i.allergens.includes(k), v)).join("")}</div></fieldset>
+    <fieldset><legend>Χαρακτηρισμοί</legend>
+      <div class="row" style="gap:.3rem 1rem">${Object.entries(TAG_LBL).map(([k, v]) => chk("tg_" + k, i.tags.includes(k), v)).join("")}</div></fieldset>
+    <div class="row">${chk("available", i.available, "Διαθέσιμο σήμερα")}${chk("active", i.active, "Εμφανίζεται στον κατάλογο")}</div>`,
+    toRow: (f, form) => {
+      const e = form.elements;
+      if (!f.name_el) throw new Error("Συμπλήρωσε το όνομα.");
+      if (f.price === "" || Number(f.price) < 0) throw new Error("Συμπλήρωσε την τιμή.");
+      if (f.image_url && !/^https:\/\//i.test(f.image_url)) throw new Error("Ο σύνδεσμος της φωτογραφίας πρέπει να ξεκινά με https://");
+      if (e.tg_vegan.checked && (e.al_milk.checked || e.al_eggs.checked || e.al_fish.checked || e.al_crustaceans.checked || e.al_molluscs.checked))
+        throw new Error("Ένα πιάτο με γάλα, αυγά, ψάρι ή θαλασσινά δεν μπορεί να είναι vegan.");
+      if (e.tg_gluten_free.checked && e.al_gluten.checked) throw new Error("Το πιάτο έχει σημειωθεί και «με γλουτένη» και «χωρίς γλουτένη».");
+      return { category_id: Number(f.category_id), name_el: f.name_el, name_en: f.name_en || null, price: Number(f.price),
+        description_el: f.description_el || null, description_en: f.description_en || null, image_url: f.image_url || null, sort: Number(f.sort || 0),
+        allergens: Object.keys(ALLERGEN_LBL).filter(k => e["al_" + k].checked), tags: Object.keys(TAG_LBL).filter(k => e["tg_" + k].checked),
+        available: e.available.checked, active: e.active.checked };
+    } });
 }
 
 // ======================================================================

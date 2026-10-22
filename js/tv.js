@@ -2,7 +2,7 @@
 // Βελάκια: μετακίνηση στο πλησιέστερο στοιχείο προς εκείνη την κατεύθυνση. OK/Enter: πάτημα. Return/Back: πίσω.
 // Γραμμένο σε απλή JavaScript ώστε να τρέχει και σε παλαιότερους browsers τηλεοράσεων (Samsung Tizen).
 (function () {
-  var FOCUSABLE = 'button:not([disabled]), a[href], input:not([type="hidden"]), select, textarea, [tabindex="0"]';
+  var FOCUSABLE = 'button:not([disabled]), a[href], input:not([type="hidden"]), select, textarea, summary, [tabindex="0"]';
   var KEY = { 37: "left", 38: "up", 39: "right", 40: "down" };
   var BACK_CODES = { 10009: 1, 461: 1, 8: 1, 27: 1 };   // Tizen Return, webOS Back, Backspace, Escape
 

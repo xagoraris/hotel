@@ -229,3 +229,13 @@ dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem;
 dl.kv dt { color: var(--muted); }
 dl.kv dd { margin: 0; font-weight: 600; }
 @media (max-width: 1400px) { .user-name { display: none; } }
+
+/* Παραγγελίες εστίασης */
+.ord-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
+.ord { border-left: 5px solid var(--border); margin: 0; }
+.ord-new { border-left-color: var(--warn); }
+.ord-preparing { border-left-color: var(--primary); }
+.ord-delivered { border-left-color: var(--ok, #12805c); opacity: .8; }
+.ord-cancelled { opacity: .55; }
+.ord-items { margin: .6rem 0; padding-left: 1.1rem; }
+.ord-items li { margin: .2rem 0; }

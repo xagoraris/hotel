@@ -7,7 +7,7 @@ const LBL = {
   role: { admin: "Διαχειριστής", reception: "Ρεσεψιόν", housekeeping: "Καθαριότητα" },
   idType: { id_card: "Ταυτότητα", passport: "Διαβατήριο", other: "Άλλο" },
   req: { new: "Νέο", confirmed: "Επιβεβαιωμένο", done: "Ολοκληρώθηκε", cancelled: "Ακυρώθηκε" },
-  kind: { transfer: "Transfer", yachting: "Yachting / κρουαζιέρα", tour: "Εκδρομή", spa: "Spa", restaurant: "Εστιατόριο", other: "Άλλο" },
+  kind: { transfer: "Transfer", rental: "Ενοικίαση αυτοκινήτου / ATV", yachting: "Yachting / κρουαζιέρα", tour: "Εκδρομή", spa: "Spa", restaurant: "Εστιατόριο", other: "Άλλο" },
   order: { new: "Νέα", preparing: "Ετοιμάζεται", delivered: "Παραδόθηκε", cancelled: "Ακυρώθηκε" },
   priceUnit: { per_booking: "Ανά κράτηση", per_person: "Ανά άτομο", on_request: "Κατόπιν επικοινωνίας" },
   direction: { to_airport: "Προς αεροδρόμιο", from_airport: "Από αεροδρόμιο", to_port: "Προς λιμάνι", from_port: "Από λιμάνι", other: "Άλλη διαδρομή" }
@@ -60,6 +60,7 @@ const ROUTES = {
   rooms:        { title: "Δωμάτια",      roles: ["admin"],                   render: viewRooms },
   tablet:       { title: "Tablet",       roles: ["admin"],                   render: viewTablet },
   channels:     { title: "Κανάλια",      roles: ["admin"],                   render: viewChannels },
+  stats:        { title: "Στατιστικά",   roles: ["admin"],                   render: viewStats },
   users:        { title: "Χρήστες",      roles: ["admin"],                   render: viewUsers },
   settings:     { title: "Ρυθμίσεις",    roles: ["admin"],                   render: viewSettings }
 };
@@ -970,6 +971,16 @@ async function viewSettings(main) {
     <label class="check" style="margin-bottom:1rem"><input type="checkbox" name="online_booking" ${s.online_booking ? "checked" : ""}> Δέχομαι online αιτήματα κράτησης</label>
     <button class="btn primary">Αποθήκευση</button>
   </form>
+  <form class="card" id="bf">
+    <h2>Ταυτότητα (οθόνες πελάτη)</h2>
+    <p class="small muted">Χρώματα και λογότυπο για το tablet, την τηλεόραση, το κινητό (QR) και τις τυπωμένες κάρτες QR.</p>
+    <div class="grid">
+      <div class="field"><label>Κύριο χρώμα</label><input type="color" name="brand_color" value="${esc(s.brand_color || "#16324F")}"></div>
+      <div class="field"><label>Δευτερεύον χρώμα (τιμές, λεπτομέρειες)</label><input type="color" name="accent_color" value="${esc(s.accent_color || "#B8894A")}"></div>
+    </div>
+    <div class="field"><label>Λογότυπο (σύνδεσμος https://…, ιδανικά PNG/SVG με διάφανο φόντο)</label><input type="url" name="logo_url" value="${esc(s.logo_url)}"></div>
+    <div class="row"><button class="btn primary">Αποθήκευση</button><button type="button" class="btn" id="brandReset">Επαναφορά προεπιλογών</button></div>
+  </form>
   <div class="card">
     <h2>Σελίδα πελατών</h2>
     <p>Οι πελάτες κάνουν αίτημα κράτησης, βλέπουν την κράτησή τους και κάνουν online check-in εδώ (ελληνικά & αγγλικά):</p>
@@ -979,6 +990,16 @@ async function viewSettings(main) {
   </div>
   </div>`;
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(portal); toast("Αντιγράφηκε."); } catch { $("#purl").select(); } };
+  const saveBrand = (row, btn) => busy(btn, async () => {
+    try { must(await sb.from("settings").update(row).eq("id", 1)); toast("Αποθηκεύτηκε."); await loadBase(); route(); } catch (e) { fail(e); }
+  });
+  $("#bf").onsubmit = ev => {
+    ev.preventDefault();
+    const f = formData(ev.target);
+    if (f.logo_url && !/^https:\/\//i.test(f.logo_url)) return toast("Ο σύνδεσμος του λογοτύπου πρέπει να ξεκινά με https://", "err");
+    saveBrand({ brand_color: f.brand_color, accent_color: f.accent_color, logo_url: f.logo_url || null }, $("button.primary", ev.target));
+  };
+  $("#brandReset").onclick = ev => saveBrand({ brand_color: null, accent_color: null, logo_url: null }, ev.target);
   $("#sf").onsubmit = ev => {
     ev.preventDefault();
     return busy($("button.primary", ev.target), async () => {
@@ -1065,6 +1086,80 @@ function openRequest(q) {
   });
 }
 
+
+
+// ======================================================================
+// Στατιστικά χρήσης (διαχειριστής): συγκεντρωτικά, χωρίς στοιχεία επισκεπτών
+// ======================================================================
+let statsDays = 30;
+async function viewStats(main) {
+  const to = D.today(), from = D.add(to, -(statsDays - 1));
+  const st = must(await sb.rpc("admin_stats", { p_from: from, p_to: to }));
+  const o = st.opens, totalOpens = o.tablet + o.tv + o.qr, od = st.orders, rq = st.requests;
+  const pct = (a, b) => b ? Math.round(a * 100 / b) + "%" : "—";
+  const tile = (label, value, sub) => `<div class="stat"><div class="small muted">${esc(label)}</div><div style="font-size:1.6rem;font-weight:800">${value}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
+  const table = (head, rows) => rows.length ? `<div class="table-wrap"><table><thead><tr>${head.map((h, i) => `<th${i ? ' class="num"' : ""}>${esc(h)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td${i ? ' class="num"' : ""}>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="empty">Δεν υπάρχουν δεδομένα ακόμη.</div>`;
+  const periods = { 7: "7 ημέρες", 30: "30 ημέρες", 90: "90 ημέρες", 365: "12 μήνες" };
+
+  main.innerHTML = `
+  <div class="page-head"><h1>Στατιστικά</h1>
+    ${Object.entries(periods).map(([k, v]) => `<button class="btn sm${Number(k) === statsDays ? " primary" : ""}" data-days="${k}">${v}</button>`).join("")}</div>
+  <p class="small muted">${D.fmt(from, "el", { day: "numeric", month: "short", year: "numeric" })} – ${D.fmt(to, "el", { day: "numeric", month: "short", year: "numeric" })} ·
+    Μόνο συγκεντρωτικοί αριθμοί: δεν καταγράφεται ποιος πελάτης ή ποιο δωμάτιο έκανε τι.</p>
+  <div class="stats">
+    ${tile("Ανοίγματα οθόνης δωματίου", totalOpens, `Tablet ${o.tablet} · TV ${o.tv} · Κινητό ${o.qr}`)}
+    ${tile("Συνδέσεις μέσω QR", st.qr_logins, `σε ${st.stays} διαμονές της περιόδου`)}
+    ${tile("Αιτήματα υπηρεσιών", rq.total, `ολοκληρώθηκαν ${rq.done} · από κινητό ${pct(rq.qr, rq.total)}`)}
+    ${tile("Παραγγελίες εστίασης", od.total, `παραδόθηκαν ${od.delivered} · στην πισίνα ${od.pool}`)}
+    ${tile("Έσοδα εστίασης", money(od.revenue), `χρέωση δωματίου ${pct(od.to_room, od.delivered)} · μέση αξία ${od.delivered ? money(od.revenue / od.delivered) : "—"}`)}
+    ${tile("Μέσος χρόνος παράδοσης", od.avg_minutes != null ? `${od.avg_minutes}′` : "—", "από την παραγγελία ως την παράδοση")}
+  </div>
+  <div class="card">
+    <h2>Ανοίγματα ανά ημέρα</h2>
+    <div id="chart" class="chart"></div>
+    <details style="margin-top:.6rem"><summary class="small">Πίνακας</summary>
+      ${table(["Ημέρα", "Ανοίγματα", "Παραγγελίες", "Αιτήματα"], st.daily.slice().reverse().map(d => [esc(D.fmt(d.day, "el", { weekday: "short", day: "numeric", month: "short" })), d.opens, d.orders, d.requests]))}</details>
+  </div>
+  <div class="cols">
+    <div class="card"><h2>Δημοφιλείς υπηρεσίες</h2>
+      ${table(["Υπηρεσία", "Προβολές", "Αιτήματα", "Αξία"], st.services.map(x => [`${esc(x.name)}<div class="small muted">${esc(LBL.kind[x.kind] || "")}</div>`, x.views, x.requests, x.value ? money(x.value) : "—"]))}</div>
+    <div class="card"><h2>Δημοφιλή πιάτα & ποτά</h2>
+      ${table(["Προϊόν", "Τεμάχια", "Αξία"], st.items.map(x => [esc(x.name), x.qty, money(x.value)]))}</div>
+  </div>
+  <div class="cols">
+    <div class="card"><h2>Κατηγορίες υπηρεσιών (προβολές)</h2>${table(["Κατηγορία", "Προβολές"], st.categories.map(x => [esc(LBL.kind[x.kind] || x.kind), x.n]))}</div>
+    <div class="card"><h2>Πληροφορίες & εστίαση (προβολές)</h2>${table(["Ενότητα", "Προβολές"], [...st.sections.map(x => [esc(x.name), x.n]), ...st.outlets.map(x => [`🍽️ ${esc(x.name)}`, x.n])].sort((a, b) => b[1] - a[1]))}</div>
+  </div>`;
+  $$("[data-days]", main).forEach(b => b.onclick = () => { statsDays = Number(b.dataset.days); refresh(); });
+  drawBars($("#chart", main), st.daily.map(d => ({ label: D.fmt(d.day, "el", { day: "numeric", month: "short" }), value: d.opens, tip: `${D.fmt(d.day, "el", { weekday: "short", day: "numeric", month: "short" })}: ${d.opens} ανοίγματα · ${d.orders} παραγγελίες · ${d.requests} αιτήματα` })));
+}
+
+// Απλό ραβδόγραμμα μίας σειράς (SVG): λεπτές μπάρες, αραιές ετικέτες, tooltip στο πέρασμα του ποντικιού.
+function drawBars(el, pts) {
+  if (!el) return;
+  const W = 900, H = 220, padL = 34, padB = 26, padT = 10, n = pts.length;
+  const max = Math.max(1, ...pts.map(p => p.value));
+  const step = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
+  const top = Math.ceil(max / step) * step || 1;
+  const bw = (W - padL) / n, barW = Math.max(2, Math.min(28, bw - 2));
+  const y = v => padT + (H - padT - padB) * (1 - v / top);
+  const every = Math.ceil(n / 10);
+  const ticks = []; for (let v = 0; v <= top; v += step) ticks.push(v);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Ανοίγματα ανά ημέρα" style="width:100%;height:auto;display:block">
+    ${ticks.map(v => `<line x1="${padL}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--border)" stroke-width="1"/><text x="${padL - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${v}</text>`).join("")}
+    ${pts.map((p, i) => { const x = padL + i * bw + (bw - barW) / 2, h = Math.max(0, y(0) - y(p.value));
+      return `<g class="bar" data-i="${i}"><rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${H - padT - padB}" fill="transparent"/>
+        ${p.value ? `<path d="M${x},${y(0)} v${-(h - Math.min(4, h))} q0,${-Math.min(4, h)} ${Math.min(4, barW / 2)},${-Math.min(4, h)} h${barW - 2 * Math.min(4, barW / 2)} q${Math.min(4, barW / 2)},0 ${Math.min(4, barW / 2)},${Math.min(4, h)} v${h - Math.min(4, h)} z" fill="var(--primary)"/>` : ""}
+        ${i % every === 0 ? `<text x="${padL + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(p.label)}</text>` : ""}</g>`; }).join("")}
+  </svg><div class="chart-tip" hidden></div>`;
+  const tip = $(".chart-tip", el);
+  $$(".bar", el).forEach(g => {
+    g.onmouseenter = g.ontouchstart = () => { const p = pts[Number(g.dataset.i)]; tip.textContent = p.tip; tip.hidden = false; };
+    g.onmousemove = ev => { const r = el.getBoundingClientRect(); tip.style.left = Math.min(ev.clientX - r.left + 12, r.width - 260) + "px"; tip.style.top = (ev.clientY - r.top - 40) + "px"; };
+    g.onmouseleave = () => { tip.hidden = true; };
+  });
+}
 
 // ======================================================================
 // Παραγγελίες εστίασης (από tablet / TV / κινητό δωματίων)
@@ -1290,13 +1385,15 @@ async function printRoomQrs(rooms) {
   if (!w) throw new Error("Ο browser μπλόκαρε το νέο παράθυρο. Επίτρεψε τα αναδυόμενα για αυτή τη σελίδα.");
   const s = S.settings;
   const cards = [];
-  for (const r of rooms) cards.push(`<div class="c"><div class="h">${esc(s.hotel_name)}</div>
+  const logo = s.logo_url && /^https:\/\//i.test(s.logo_url) ? `<img class="logo" src="${esc(s.logo_url)}" alt="">` : "";
+  for (const r of rooms) cards.push(`<div class="c">${logo}<div class="h">${esc(s.hotel_name)}</div>
     <div class="r">Δωμάτιο ${esc(r.number)} · Room ${esc(r.number)}</div>
     <div class="q">${await qrSvg(roomQrUrl(r))}</div>
     <div class="t">Σκανάρετε για υπηρεσίες, πληροφορίες και αιτήματα<br><span>Scan for hotel services, information & requests</span></div>
     ${s.wifi_name ? `<div class="w">Wi‑Fi: <b>${esc(s.wifi_name)}</b>${s.wifi_password ? ` · <b>${esc(s.wifi_password)}</b>` : ""}</div>` : ""}</div>`);
   w.document.write(`<!doctype html><html lang="el"><head><meta charset="utf-8"><title>QR δωματίων</title><style>
-    @page { size: A4; margin: 12mm; } body { font-family: system-ui, sans-serif; margin: 0; color: #16324F; }
+    @page { size: A4; margin: 12mm; } body { font-family: system-ui, sans-serif; margin: 0; color: ${s.brand_color || "#16324F"}; }
+    .logo { max-height: 14mm; max-width: 50mm; object-fit: contain; display: block; margin: 0 auto 2mm; }
     .g { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
     .c { border: 1px solid #ccd; border-radius: 6mm; padding: 7mm 6mm; text-align: center; break-inside: avoid; }
     .h { font-weight: 700; font-size: 15pt; } .r { font-size: 12pt; margin: 1mm 0 4mm; }
@@ -1440,13 +1537,22 @@ function editService(v) {
         <div class="field"><label>Μέγιστα άτομα</label><input type="number" name="max_persons" min="1" max="50" value="${v && v.max_persons ? v.max_persons : ""}"></div>
         <div class="field"><label>Σειρά εμφάνισης</label><input type="number" name="sort" value="${v ? v.sort : 0}"></div>
       </div>
+      <div class="grid">
+        <div class="field"><label>Διάρκεια (ελληνικά)</label><input name="duration_el" value="${esc(v && v.duration_el)}" placeholder="π.χ. 5 ώρες, Ανά ημέρα"></div>
+        <div class="field"><label>Διάρκεια (αγγλικά)</label><input name="duration_en" value="${esc(v && v.duration_en)}" placeholder="e.g. 5 hours, Per day"></div>
+      </div>
       <div class="field"><label>Φωτογραφία (σύνδεσμος https://…)</label><input name="image_url" type="url" value="${esc(v && v.image_url)}"></div>
+      <div class="field"><label>Περισσότερες φωτογραφίες (ένας σύνδεσμος https://… ανά γραμμή)</label><textarea name="gallery" rows="3">${esc(v && v.gallery ? v.gallery.join("\n") : "")}</textarea></div>
       <label class="check"><input type="checkbox" name="active" ${!v || v.active ? "checked" : ""}> Εμφανίζεται στο tablet</label>`,
     toPayload: (f, form) => {
       if (!f.name_el) throw new Error("Συμπλήρωσε όνομα.");
       if (f.image_url && !/^https:\/\//i.test(f.image_url)) throw new Error("Ο σύνδεσμος της φωτογραφίας πρέπει να ξεκινά με https://");
       if (f.price_unit !== "on_request" && f.price === "") throw new Error("Συμπλήρωσε τιμή ή διάλεξε «Κατόπιν επικοινωνίας».");
-      return { ...nullIfEmpty({ name_el: f.name_el, name_en: f.name_en, description_el: f.description_el, description_en: f.description_en, image_url: f.image_url }),
+      const gallery = (f.gallery || "").split(/\s*\n\s*/).map(x => x.trim()).filter(Boolean);
+      if (gallery.some(u => !/^https:\/\//i.test(u))) throw new Error("Κάθε σύνδεσμος φωτογραφίας πρέπει να ξεκινά με https://");
+      if (gallery.length > 12) throw new Error("Έως 12 φωτογραφίες.");
+      return { ...nullIfEmpty({ name_el: f.name_el, name_en: f.name_en, description_el: f.description_el, description_en: f.description_en, image_url: f.image_url,
+          duration_el: f.duration_el, duration_en: f.duration_en }), gallery,
         kind: f.kind, price_unit: f.price_unit, price: f.price === "" ? null : Number(f.price),
         max_persons: f.max_persons ? Number(f.max_persons) : null, sort: Number(f.sort || 0), active: form.elements.active.checked };
     }

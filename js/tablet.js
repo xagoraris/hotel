@@ -11,6 +11,7 @@ const REFRESH_MS = 60000;   // ανανέωση δεδομένων (π.χ. νέ�
 
 const KINDS = {
   transfer:   { icon: "🚐", el: "Transfer", en: "Transfers" },
+  rental:     { icon: "🚗", el: "Ενοικίαση αυτοκινήτου & ATV", en: "Car & ATV rental" },
   yachting:   { icon: "⛵", el: "Yachting & κρουαζιέρες", en: "Yachting & cruises" },
   tour:       { icon: "🗺️", el: "Εκδρομές", en: "Tours" },
   spa:        { icon: "💆", el: "Spa & ευεξία", en: "Spa & wellness" },
@@ -78,6 +79,28 @@ let lang = (() => {
 let data = null;
 let view = { name: "home" };
 const t = () => TT[lang];
+// Σειρά κατηγοριών όπως στη βάση (admin_stats): το «category» καταγράφεται με τον αύξοντα αριθμό.
+const KIND_ORDER = ["transfer", "rental", "yachting", "tour", "spa", "restaurant", "other"];
+// Στατιστικά χρήσης: μόνο συγκεντρωτικοί μετρητές, χωρίς στοιχεία πελάτη. Σφάλματα αγνοούνται.
+function track(event, ref) {
+  if (!token) return;
+  try { sb.rpc("track_event", { p_token: token, p_event: event, p_ref: ref || 0, p_device: TV ? "tv" : MOBILE ? "qr" : "tablet" }).then(() => {}, () => {}); } catch {}
+}
+let openDay = null;
+// Χρώματα / λογότυπο του ξενοδοχείου.
+function applyBrand(h) {
+  if (!h) return;
+  const root = document.body.style;   // το --tb-ink ορίζεται στο body.tablet, οπότε εκεί το αλλάζουμε
+  if (h.brand_color) { root.setProperty("--tb-ink", h.brand_color); root.setProperty("--primary", h.brand_color); }
+  if (h.accent_color) root.setProperty("--accent", h.accent_color);
+  const title = $(".tb-title");
+  let img = $("#tbLogo");
+  const url = safeUrl(h.logo_url);
+  if (url && title) {
+    if (!img) { img = document.createElement("img"); img.id = "tbLogo"; img.className = "tb-logo"; img.alt = ""; title.parentNode.insertBefore(img, title); }
+    if (img.getAttribute("src") !== url) img.src = url;
+  } else if (img) img.remove();
+}
 const L = (o, base) => (lang === "en" && o[base + "_en"]) || o[base + "_el"] || "";
 const must = ({ data, error }) => { if (error) throw error; return data; };
 
@@ -103,6 +126,8 @@ async function load() {
   if (!token) return renderPair();
   try {
     data = must(await sb.rpc("tablet_home", { p_token: token }));
+    applyBrand(data.hotel);
+    if (openDay !== D.today()) { openDay = D.today(); track("open"); }
   } catch (e) {
     if ((e.message || "") === "ERR_TABLET") {
       try { localStorage.removeItem(TOKEN_KEY); } catch {}
@@ -114,7 +139,14 @@ async function load() {
   render();
 }
 
-function go(v) { view = v; render(); scrollTo(0, 0); }
+function go(v, back) {
+  view = v; render(); scrollTo(0, 0);
+  if (back) return;   // επιστροφή με «πίσω»: δεν μετράει ως νέα προβολή
+  if (v.name === "section") track("section", v.id);
+  else if (v.name === "category") track("category", KIND_ORDER.indexOf(v.kind) + 1);
+  else if (v.name === "service") track("service", v.id);
+  else if (v.name === "outlet") track("outlet", v.id);
+}
 
 function render() {
   document.documentElement.lang = lang;
@@ -132,9 +164,9 @@ function render() {
 // Πίσω: κουμπί στην μπάρα, ή Return/Back του τηλεχειριστηρίου (tv.js). Επιστρέφει false αν είμαστε ήδη στην αρχική.
 function goBack() {
   if (!token || !data || view.name === "home") return false;
-  if (view.name === "service") go(view.from || { name: "home" });
-  else if (view.name === "cart") go({ name: "outlet", id: view.outlet });
-  else go({ name: "home" });
+  if (view.name === "service") go(view.from || { name: "home" }, true);
+  else if (view.name === "cart") go({ name: "outlet", id: view.outlet }, true);
+  else go({ name: "home" }, true);
   return true;
 }
 window.tvBack = goBack;
@@ -154,6 +186,7 @@ async function renderLogin() {
     try { roomInfo = must(await sb.rpc("guest_room_info", { p_qr: QR })); }
     catch (e) { $("#view").innerHTML = `<div class="tb-card tb-big"><div class="ic">⚠️</div><p>${esc(errText(e))}</p></div>`; return; }
   }
+  applyBrand(roomInfo);
   $("#hotel").textContent = roomInfo.hotel || "";
   $("#room").textContent = t().room(roomInfo.room);
   document.title = roomInfo.hotel || "Welcome";
@@ -262,7 +295,7 @@ function renderCategory() {
     <div class="tb-svc">${list.map(s => `
       <div class="tb-card" data-svc="${s.id}" tabindex="0" role="button">
         <div class="img" data-img="${s.id}">${safeUrl(s.image_url) ? "" : k.icon}</div>
-        <div class="info"><h2 style="margin:0">${esc(L(s, "name"))}</h2><p>${esc(L(s, "description"))}</p></div>
+        <div class="info"><h2 style="margin:0">${esc(L(s, "name"))}</h2><p>${esc(L(s, "description"))}</p>${L(s, "duration") ? `<p class="small">🕒 ${esc(L(s, "duration"))}</p>` : ""}</div>
         <div class="tb-price">${esc(priceLabel(s))}</div>
       </div>`).join("")}</div></div>`;
   list.forEach(s => bg($(`[data-img="${s.id}"]`), s.image_url));
@@ -283,9 +316,11 @@ function renderService() {
   $("#view").innerHTML = `<div class="tb-page">
     <div class="tb-card" style="margin-bottom:1rem;display:flex;gap:1.2rem;align-items:center">
       <div class="tb-svc" style="flex:none"><div class="img" id="simg">${safeUrl(s.image_url) ? "" : KINDS[s.kind].icon}</div></div>
-      <div style="flex:1"><h1 style="margin:0">${esc(L(s, "name"))}</h1><p class="muted" style="margin:.3rem 0 0">${esc(L(s, "description"))}</p></div>
+      <div style="flex:1"><h1 style="margin:0">${esc(L(s, "name"))}</h1><p class="muted" style="margin:.3rem 0 0">${esc(L(s, "description"))}</p>
+        ${L(s, "duration") ? `<p style="margin:.3rem 0 0">🕒 ${esc(L(s, "duration"))}</p>` : ""}</div>
       <div class="tb-price">${esc(priceLabel(s))}</div>
     </div>
+    ${(s.gallery || []).filter(safeUrl).length ? `<div class="tb-gallery">${s.gallery.filter(safeUrl).map((u, n) => `<div class="g" data-g="${n}"></div>`).join("")}</div>` : ""}
     ${data.guest ? `
     <form class="tb-card tb-form" id="rf" novalidate>
       <h2>${t().book}</h2>
@@ -307,6 +342,7 @@ function renderService() {
     </form>` : `<div class="tb-note">${esc(t().noGuest)}</div>`}
   </div>`;
   bg($("#simg"), s.image_url);
+  (s.gallery || []).filter(safeUrl).forEach((u, n) => bg($(`[data-g="${n}"]`), u));
   const form = $("#rf");
   if (!form) return;
   const est = () => { const e = $("#est"); if (e) e.textContent = eur(s.price_unit === "per_person" ? s.price * Number(form.elements.persons.value) : s.price); };

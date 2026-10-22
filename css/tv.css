@@ -45,3 +45,5 @@ body.tv .tb-tile, body.tv .tb-svc .tb-card, body.tv .btn { transition: transform
 body.tv .tb-chip:focus, body.tv .tb-qty .btn:focus, body.tv .tb-avoid summary:focus { outline: .22rem solid #E8B04B; outline-offset: .15rem; }
 body.tv .tb-item .img { width: 7rem; height: 5rem; }
 body.tv .tb-qty .btn { min-width: 2.6rem; }
+body.tv .tb-logo { height: 2.4rem; max-width: 9rem; }
+body.tv .tb-gallery .g { width: 22rem; }

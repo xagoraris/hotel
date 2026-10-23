@@ -164,7 +164,7 @@ function renderHome() {
   <section class="rt-hero"><h1>${esc(title)}</h1><p>${esc(t().tagline)}</p></section>
   <p class="rt-intro">${esc(t().intro)}</p>
   <div class="rt-actions">
-    <a class="btn" href="#/map">🗺️ ${t().map}</a><a class="btn" href="#/near">📍 ${t().near}</a><a class="btn primary" href="#/plan">✨ ${t().plan}</a>
+    <a class="btn" href="#/map">🗺️ ${t().map}</a><a class="btn" href="#/near">📍 ${t().near}</a><a class="btn" href="#/ar">📷 AR</a><a class="btn primary" href="#/plan">✨ ${t().plan}</a>
   </div>
   <h2 class="rt-h">${t().routes}</h2>
   <div class="rt-cards">${D0.routes.map(routeCard).join("")}</div>
@@ -215,6 +215,7 @@ async function renderPoi(id) {
   <div class="rt-actions">
     ${audio ? `<audio controls preload="none" src="${esc(audio)}" id="aud"></audio>` : `<button class="btn" id="tts">🔊 ${t().listen}</button>`}
     <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}">🧭 ${t().directions}</a>
+    ${p.ar_enabled ? `<a class="btn" href="#/ar">📷 AR</a>` : ""}
   </div>
   <div class="rt-body">${esc(L(p, "body")).split(/\n+/).map(x => `<p>${x}</p>`).join("")}</div>
   ${L(p, "hours") ? `<div class="alert info small"><b>${t().hours}:</b> ${esc(L(p, "hours"))}</div>` : ""}
@@ -309,6 +310,7 @@ async function renderPlan(run) {
 function go(path) { location.hash = "#" + path; }
 function route() {
   stopSpeech();
+  if (window.arStop) { window.arStop(); const w = document.querySelector(".rt-ar"); if (w) w.remove(); }
   if (!D0) return;
   const h = location.hash.replace(/^#/, "") || "/";
   const [, a, b] = h.split("/");
@@ -319,6 +321,7 @@ function route() {
   else if (a === "map") renderMap();
   else if (a === "near") renderNear();
   else if (a === "plan") renderPlan();
+  else if (a === "ar" && window.renderAR) renderAR();
   else renderHome();
   scrollTo(0, 0);
 }

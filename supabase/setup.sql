@@ -2,7 +2,7 @@
 -- Πρόγραμμα ξενοδοχείου: πλήρης εγκατάσταση βάσης σε ΝΕΟ έργο Supabase.
 -- Supabase → SQL Editor → New query → επικόλλησε ΟΛΟ το αρχείο → Run.
 -- Τρέχει μία φορά, σε άδειο έργο.
--- Περιέχει με τη σειρά: supabase/migrations/0001 … 0010.
+-- Περιέχει με τη σειρά: supabase/migrations/0001 … 0011.
 -- =====================================================================
 
 
@@ -2023,3 +2023,11 @@ begin
   insert into public.roots_route_stops (route_id, poi_id, seq) select r.id, p.id, 8 from public.roots_routes r, public.roots_pois p where r.code = 'splendour' and p.code = 'caldera_view';
   insert into public.roots_route_stops (route_id, poi_id, seq) select r.id, p.id, 9 from public.roots_routes r, public.roots_pois p where r.code = 'splendour' and p.code = 'skaros';
 end $seed$;
+
+
+-- ---------------------------------------------------------------------
+-- 0011_ar_pilot.sql
+-- ---------------------------------------------------------------------
+-- Πιλοτικό AR: σημεία που φαίνονται από την καλντέρα στο Φηροστεφάνι. ar_verified μένει false μέχρι τον έλεγχο επιτόπου.
+update public.roots_pois set ar_enabled = true
+where code in ('nea_kameni','palea_kameni','skaros','oia_castle','orthodox_cathedral','profitis_ilias','lighthouse') and not ar_enabled;

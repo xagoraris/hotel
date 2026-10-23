@@ -271,12 +271,15 @@ function renderHome() {
     ${kinds.map(k => `<button class="tb-tile feature" data-kind="${k}"><span class="ic">${KINDS[k].icon}</span><span><b>${esc(KINDS[k][lang])}</b><br><small>${t().tapToBook}</small></span></button>`).join("")}
     ${g ? `<button class="tb-tile" data-requests><span class="ic">📋</span><span><b>${t().myRequests}</b><br><small>${data.requests.filter(r => r.status !== "cancelled").length + (data.orders || []).filter(o => o.status !== "cancelled").length || ""}</small></span></button>` : ""}
   </div>` : ""}
+  ${!TV ? `<h2 class="tb-h">${lang === "el" ? "Εξερευνήστε" : "Explore"}</h2>
+  <div class="tb-tiles"><button class="tb-tile feature roots" data-roots><span class="ic">🧭</span><span><b>${lang === "el" ? "Ανακαλύψτε τη Σαντορίνη" : "Discover Santorini"}</b><br><small>${lang === "el" ? "Πολιτιστικές διαδρομές, χάρτης, αφηγήσεις" : "Cultural routes, map, audio stories"}</small></span></button></div>` : ""}
   ${data.sections.length ? `<h2 class="tb-h">${t().info}</h2>
   <div class="tb-tiles">${data.sections.map(s => `<button class="tb-tile" data-section="${s.id}"><span class="ic">${esc(s.icon || "ℹ️")}</span><b>${esc(L(s, "title"))}</b></button>`).join("")}</div>` : ""}`;
   bg($("#hero"), h.cover_image_url);
   $$("[data-kind]").forEach(b => b.onclick = () => go({ name: "category", kind: b.dataset.kind }));
   $$("[data-section]").forEach(b => b.onclick = () => go({ name: "section", id: Number(b.dataset.section) }));
   $$("[data-outlet]").forEach(b => b.onclick = () => go({ name: "outlet", id: Number(b.dataset.outlet) }));
+  const rb = $("[data-roots]"); if (rb) rb.onclick = () => { location.href = "roots.html?from=room"; };
   const r = $("[data-requests]"); if (r) r.onclick = () => go({ name: "requests" });
 }
 

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Roots</title>
+<meta name="theme-color" content="#16324F">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/roots.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/roots.js" defer></script>
+</head>
+<!-- Ψηφιακός πολιτιστικός οδηγός: θεματικές διαδρομές, σημεία ενδιαφέροντος, χάρτης, αφηγήσεις. Δημόσιος, χωρίς σύνδεση. -->
+<body class="roots">
+<header class="rt-top">
+  <button class="rt-back hidden" id="back" aria-label="Back">‹</button>
+  <img id="logo" class="rt-logo hidden" alt="">
+  <div class="rt-title"><b id="title">Roots</b><span id="sub"></span></div>
+  <div class="rt-lang"><button data-lang="el">EL</button><button data-lang="en">EN</button></div>
+</header>
+<main class="rt-main" id="view"><p class="muted">…</p></main>
+</body>
+</html>

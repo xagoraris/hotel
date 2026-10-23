@@ -60,6 +60,7 @@ const ROUTES = {
   rooms:        { title: "Δωμάτια",      roles: ["admin"],                   render: viewRooms },
   tablet:       { title: "Tablet",       roles: ["admin"],                   render: viewTablet },
   channels:     { title: "Κανάλια",      roles: ["admin"],                   render: viewChannels },
+  roots:        { title: "Roots",        roles: ["admin"],                   render: viewRoots },
   stats:        { title: "Στατιστικά",   roles: ["admin"],                   render: viewStats },
   users:        { title: "Χρήστες",      roles: ["admin"],                   render: viewUsers },
   settings:     { title: "Ρυθμίσεις",    roles: ["admin"],                   render: viewSettings }
@@ -1088,13 +1089,203 @@ function openRequest(q) {
 
 
 
+
+// ======================================================================
+// Splendour Roots (διαχειριστής): θεματικές διαδρομές, σημεία ενδιαφέροντος, ρυθμίσεις οδηγού
+// ======================================================================
+const ROOTS_CAT = { start: "Αφετηρία", archaeology: "Αρχαιολογικός χώρος", museum: "Μουσείο", church: "Εκκλησία", castle: "Κάστρο",
+  village: "Χωριό", architecture: "Αρχιτεκτονική", culture: "Πολιτισμός", nature: "Φύση" };
+const ROOTS_ACCESS = { walk: "Με τα πόδια", car: "Με αυτοκίνητο", boat: "Με καραβάκι" };
+const ROOTS_MODE = { walk: "Περπάτημα", car: "Αυτοκίνητο", mixed: "Μικτή (αυτοκίνητο/καραβάκι)" };
+const ROUTE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+
+async function viewRoots(main) {
+  const [routes, pois, stops] = await Promise.all([
+    sb.from("roots_routes").select("*").order("sort").order("id"),
+    sb.from("roots_pois").select("*").order("sort").order("id"),
+    sb.from("roots_route_stops").select("*").order("route_id").order("seq")
+  ].map(q => q.then(must)));
+  const s = S.settings;
+  const url = new URL("roots.html", location.href).href;
+  const poiName = id => { const p = pois.find(x => x.id === id); return p ? p.name_el : "?"; };
+  main.innerHTML = `
+  <div class="page-head"><h1>${esc(s.roots_title || "Roots")}</h1><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Άνοιγμα οδηγού</a>
+    <button class="btn" id="rootsQr">QR για τη ρεσεψιόν</button></div>
+  <p class="small muted">Ψηφιακός πολιτιστικός οδηγός: δημόσιος (χωρίς σύνδεση), στα ελληνικά και αγγλικά. Ανοίγει από την οθόνη δωματίου («Ανακαλύψτε τη Σαντορίνη»), από QR ή από την ιστοσελίδα σας: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></p>
+  <div class="cols">
+    <form class="card" id="rsf">
+      <h2>Ρυθμίσεις οδηγού</h2>
+      <div class="field"><label>Τίτλος</label><input name="roots_title" value="${esc(s.roots_title)}" placeholder="π.χ. Splendour Roots"></div>
+      <div class="grid">
+        <div class="field"><label>Θέση ξενοδοχείου: γεωγρ. πλάτος</label><input name="hotel_lat" type="number" step="0.000001" value="${s.hotel_lat ?? ""}" placeholder="36.4245"></div>
+        <div class="field"><label>γεωγρ. μήκος</label><input name="hotel_lng" type="number" step="0.000001" value="${s.hotel_lng ?? ""}" placeholder="25.4270"></div>
+      </div>
+      <p class="small muted">Από εδώ μετρούν οι αποστάσεις όταν ο επισκέπτης δεν δίνει τη θέση του. Στο Google Maps: δεξί κλικ πάνω στο ξενοδοχείο → αντιγραφή συντεταγμένων.</p>
+      <button class="btn primary">Αποθήκευση</button>
+    </form>
+    <div class="card">
+      <h2>Περιεχόμενο</h2>
+      <p class="small">Τα αρχικά κείμενα είναι <b>πρώτη μορφή για έλεγχο</b>: διαβάστε τα, διορθώστε ό,τι χρειάζεται και προσθέστε φωτογραφίες (δικές σας ή με άδεια χρήσης) και, αν θέλετε, ηχογραφημένες αφηγήσεις. Χωρίς ηχογράφηση, το κουμπί «Ακούστε» διαβάζει το κείμενο με τη φωνή της συσκευής.</p>
+      <p class="small">Οι συντεταγμένες είναι κατά προσέγγιση: επαληθεύστε τις επιτόπου, ειδικά για τα σημεία που θα χρησιμοποιηθούν στην επαυξημένη πραγματικότητα (AR).</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row"><h2 style="margin:0">Θεματικές διαδρομές</h2><span class="spacer"></span><button class="btn primary sm" id="addRoute">+ Νέα διαδρομή</button></div>
+    <div class="table-wrap"><table><tbody>${routes.map(r => `<tr class="click" data-route="${r.id}">
+      <td style="width:6px;background:${esc(r.color || "#ccc")}"></td>
+      <td><b>${esc(r.icon || "")} ${esc(r.title_el)}</b>${r.active ? "" : ` <span class="badge b-gray">Κρυφή</span>`}<div class="small muted">${esc(r.duration_el || "")} · ${esc(ROOTS_MODE[r.mode])}</div></td>
+      <td class="small">${stops.filter(x => x.route_id === r.id).map(x => esc(poiName(x.poi_id))).join(" → ") || `<span class="muted">Χωρίς στάσεις</span>`}</td></tr>`).join("")}</tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="row"><h2 style="margin:0">Σημεία ενδιαφέροντος</h2><span class="spacer"></span><button class="btn primary sm" id="addPoi">+ Νέο σημείο</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Σημείο</th><th>Κατηγορία</th><th>Πρόσβαση</th><th>Μέσα</th><th>AR</th></tr></thead><tbody>${pois.map(p => `<tr class="click" data-poi="${p.id}">
+      <td><b>${esc(p.name_el)}</b>${p.active ? "" : ` <span class="badge b-gray">Κρυφό</span>`}<div class="small muted">${esc(p.name_en || "")}</div></td>
+      <td class="small">${esc(ROOTS_CAT[p.category])}</td><td class="small">${esc(ROOTS_ACCESS[p.access])}</td>
+      <td class="small">${[p.image_url || p.gallery.length ? "📷" : "", p.audio_el_url || p.audio_en_url ? "🎧" : ""].join(" ") || `<span class="muted">—</span>`}</td>
+      <td class="small">${p.ar_enabled ? (p.ar_verified ? `<span class="badge b-clean">Επαληθευμένο</span>` : `<span class="badge b-pending">Προς έλεγχο</span>`) : `<span class="muted">—</span>`}</td></tr>`).join("")}</tbody></table></div>
+  </div>`;
+
+  $("#rsf").onsubmit = ev => {
+    ev.preventDefault();
+    const f = formData(ev.target);
+    return busy($("button.primary", ev.target), async () => {
+      try {
+        const lat = f.hotel_lat === "" ? null : Number(f.hotel_lat), lng = f.hotel_lng === "" ? null : Number(f.hotel_lng);
+        if ((lat == null) !== (lng == null)) throw new Error("Συμπλήρωσε και τις δύο συντεταγμένες (ή καμία).");
+        must(await sb.from("settings").update({ roots_title: f.roots_title || null, hotel_lat: lat, hotel_lng: lng }).eq("id", 1));
+        toast("Αποθηκεύτηκε."); await loadBase(); refresh();
+      } catch (e) { fail(e); }
+    });
+  };
+  $("#rootsQr").onclick = ev => busy(ev.target, async () => {
+    try {
+      const w = window.open("", "_blank");
+      if (!w) throw new Error("Ο browser μπλόκαρε το νέο παράθυρο. Επίτρεψε τα αναδυόμενα για αυτή τη σελίδα.");
+      w.document.write(`<!doctype html><html lang="el"><head><meta charset="utf-8"><title>QR ${esc(s.roots_title || "Roots")}</title><style>
+        body{font-family:system-ui,sans-serif;text-align:center;color:${s.brand_color || "#16324F"};padding:20mm} svg{width:90mm;height:90mm}
+        h1{font-size:26pt;margin:0} p{font-size:14pt} .bar{margin-bottom:10mm} @media print{.bar{display:none}}</style></head><body>
+        <div class="bar"><button onclick="print()">Εκτύπωση</button></div>
+        <h1>${esc(s.roots_title || "Roots")}</h1><p>Ανακαλύψτε τη Σαντορίνη · Discover Santorini</p>${await qrSvg(url)}
+        <p>Πολιτιστικές διαδρομές, χάρτης και αφηγήσεις<br>Cultural routes, map & audio stories</p></body></html>`);
+      w.document.close();
+    } catch (e) { fail(e); }
+  });
+  $("#addRoute").onclick = () => editRoute(null, pois, stops, routes);
+  $("#addPoi").onclick = () => editPoi(null);
+  $$("[data-route]", main).forEach(tr => tr.onclick = () => editRoute(routes.find(r => r.id === Number(tr.dataset.route)), pois, stops, routes));
+  $$("[data-poi]", main).forEach(tr => tr.onclick = () => editPoi(pois.find(p => p.id === Number(tr.dataset.poi))));
+}
+
+function editRoute(r, pois, stops, routes) {
+  const cur = r ? stops.filter(x => x.route_id === r.id).sort((a, b) => a.seq - b.seq).map(x => x.poi_id) : [];
+  const color = r ? r.color : ROUTE_COLORS[routes.length % ROUTE_COLORS.length];
+  const poiOpts = sel => pois.map(p => `<option value="${p.id}"${p.id === sel ? " selected" : ""}>${esc(p.name_el)}</option>`).join("");
+  const stopRow = id => `<div class="row rstop" style="flex-wrap:nowrap;margin:.25rem 0"><span class="small muted rnum"></span><select class="rpoi">${poiOpts(id)}</select>
+    <button type="button" class="btn sm" data-up title="Πάνω">↑</button><button type="button" class="btn sm" data-down title="Κάτω">↓</button><button type="button" class="btn sm danger" data-rm title="Αφαίρεση">✕</button></div>`;
+  const m = openModal({ title: r ? r.title_el : "Νέα διαδρομή", wide: true,
+    footer: `<button type="button" class="btn primary" id="rsave">Αποθήκευση</button>`,
+    body: `
+    <div class="grid">
+      <div class="field"><label>Τίτλος (ελληνικά) *</label><input name="title_el" value="${esc(r && r.title_el)}"></div>
+      <div class="field"><label>Τίτλος (αγγλικά)</label><input name="title_en" value="${esc(r && r.title_en)}"></div>
+      <div class="field"><label>Εικονίδιο (emoji)</label><input name="icon" maxlength="8" value="${esc(r ? r.icon : "🧭")}"></div>
+      <div class="field"><label>Χρώμα στον χάρτη</label><select name="color">${ROUTE_COLORS.map(c => `<option value="${c}"${c === color ? " selected" : ""} style="background:${c};color:#fff">${c}</option>`).join("")}</select></div>
+    </div>
+    <div class="field"><label>Εισαγωγή (ελληνικά)</label><textarea name="intro_el" rows="3">${esc(r && r.intro_el)}</textarea></div>
+    <div class="field"><label>Εισαγωγή (αγγλικά)</label><textarea name="intro_en" rows="3">${esc(r && r.intro_en)}</textarea></div>
+    <div class="grid">
+      <div class="field"><label>Διάρκεια (ελληνικά)</label><input name="duration_el" value="${esc(r && r.duration_el)}" placeholder="π.χ. Μισή ημέρα"></div>
+      <div class="field"><label>Διάρκεια (αγγλικά)</label><input name="duration_en" value="${esc(r && r.duration_en)}" placeholder="e.g. Half a day"></div>
+      <div class="field"><label>Μετακίνηση</label><select name="mode">${options(ROOTS_MODE, r ? r.mode : "car")}</select></div>
+      <div class="field"><label>Σειρά</label><input type="number" name="sort" value="${r ? r.sort : routes.length + 1}"></div>
+    </div>
+    <fieldset><legend>Στάσεις (με τη σειρά)</legend><div id="rstops">${cur.map(stopRow).join("")}</div>
+      <button type="button" class="btn sm" id="addStop">+ Στάση</button></fieldset>
+    <label class="check"><input type="checkbox" name="active" ${!r || r.active ? "checked" : ""}> Εμφανίζεται στον οδηγό</label>` });
+  const box = $("#rstops", m.el);
+  const renumber = () => $$(".rnum", box).forEach((x, i) => x.textContent = i + 1 + ".");
+  const wire = row => {
+    $("[data-up]", row).onclick = () => { if (row.previousElementSibling) box.insertBefore(row, row.previousElementSibling); renumber(); };
+    $("[data-down]", row).onclick = () => { if (row.nextElementSibling) box.insertBefore(row.nextElementSibling, row); renumber(); };
+    $("[data-rm]", row).onclick = () => { row.remove(); renumber(); };
+  };
+  $$(".rstop", box).forEach(wire); renumber();
+  $("#addStop", m.el).onclick = () => { box.insertAdjacentHTML("beforeend", stopRow(null)); wire(box.lastElementChild); renumber(); };
+  $("#rsave", m.el).onclick = ev => busy(ev.target, async () => {
+    const form = $("form", m.el), f = formData(form);
+    try {
+      if (!f.title_el) throw new Error("Συμπλήρωσε τίτλο.");
+      const row = { title_el: f.title_el, title_en: f.title_en || null, icon: f.icon || null, color: f.color, intro_el: f.intro_el || null, intro_en: f.intro_en || null,
+        duration_el: f.duration_el || null, duration_en: f.duration_en || null, mode: f.mode, sort: Number(f.sort || 0), active: form.elements.active.checked };
+      let id = r && r.id;
+      if (id) must(await sb.from("roots_routes").update(row).eq("id", id));
+      else id = must(await sb.from("roots_routes").insert(row).select("id").single()).id;
+      const ids = $$(".rpoi", box).map(x => Number(x.value));
+      must(await sb.rpc("admin_roots_set_stops", { p_route: id, p_pois: ids }));
+      toast("Αποθηκεύτηκε."); m.close(); refresh();
+    } catch (e) { fail(e); }
+  });
+}
+
+function editPoi(p) {
+  crudModal({
+    title: p ? p.name_el : "Νέο σημείο ενδιαφέροντος", table: "roots_pois", row: p,
+    body: `
+    <div class="grid">
+      <div class="field"><label>Όνομα (ελληνικά) *</label><input name="name_el" value="${esc(p && p.name_el)}"></div>
+      <div class="field"><label>Όνομα (αγγλικά)</label><input name="name_en" value="${esc(p && p.name_en)}"></div>
+      <div class="field"><label>Κατηγορία</label><select name="category">${options(ROOTS_CAT, p ? p.category : "culture")}</select></div>
+      <div class="field"><label>Πρόσβαση</label><select name="access">${options(ROOTS_ACCESS, p ? p.access : "car")}</select></div>
+      <div class="field"><label>Γεωγρ. πλάτος *</label><input name="lat" type="number" step="0.000001" value="${p ? p.lat : ""}"></div>
+      <div class="field"><label>Γεωγρ. μήκος *</label><input name="lng" type="number" step="0.000001" value="${p ? p.lng : ""}"></div>
+    </div>
+    ${p ? `<p class="small"><a href="https://www.google.com/maps?q=${p.lat},${p.lng}" target="_blank" rel="noopener">Δες τη θέση στο Google Maps ↗</a></p>` : ""}
+    <div class="field"><label>Σύντομη περιγραφή (ελληνικά)</label><input name="short_el" value="${esc(p && p.short_el)}" maxlength="160"></div>
+    <div class="field"><label>Σύντομη περιγραφή (αγγλικά)</label><input name="short_en" value="${esc(p && p.short_en)}" maxlength="160"></div>
+    <div class="field"><label>Κείμενο / αφήγηση (ελληνικά)</label><textarea name="body_el" rows="6">${esc(p && p.body_el)}</textarea></div>
+    <div class="field"><label>Κείμενο / αφήγηση (αγγλικά)</label><textarea name="body_en" rows="6">${esc(p && p.body_en)}</textarea></div>
+    <div class="grid">
+      <div class="field"><label>Πληροφορίες επίσκεψης (ελληνικά)</label><input name="hours_el" value="${esc(p && p.hours_el)}" placeholder="ωράριο, εισιτήριο…"></div>
+      <div class="field"><label>Πληροφορίες επίσκεψης (αγγλικά)</label><input name="hours_en" value="${esc(p && p.hours_en)}"></div>
+    </div>
+    <div class="field"><label>Φωτογραφία (https://…)</label><input name="image_url" type="url" value="${esc(p && p.image_url)}"></div>
+    <div class="field"><label>Περισσότερες φωτογραφίες (μία https://… ανά γραμμή)</label><textarea name="gallery" rows="2">${esc(p && p.gallery ? p.gallery.join("\n") : "")}</textarea></div>
+    <div class="grid">
+      <div class="field"><label>Ηχογραφημένη αφήγηση ελληνικά (https://….mp3)</label><input name="audio_el_url" type="url" value="${esc(p && p.audio_el_url)}"></div>
+      <div class="field"><label>Ηχογραφημένη αφήγηση αγγλικά (https://….mp3)</label><input name="audio_en_url" type="url" value="${esc(p && p.audio_en_url)}"></div>
+      <div class="field"><label>Σειρά</label><input type="number" name="sort" value="${p ? p.sort : 100}"></div>
+    </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" name="active" ${!p || p.active ? "checked" : ""}> Εμφανίζεται στον οδηγό</label>
+      <label class="check"><input type="checkbox" name="ar_enabled" ${p && p.ar_enabled ? "checked" : ""}> Ετικέτα στην κάμερα (AR)</label>
+      <label class="check"><input type="checkbox" name="ar_verified" ${p && p.ar_verified ? "checked" : ""}> Η θέση επαληθεύτηκε επιτόπου</label>
+    </div>`,
+    toPayload: (f, form) => {
+      if (!f.name_el) throw new Error("Συμπλήρωσε όνομα.");
+      const lat = Number(f.lat), lng = Number(f.lng);
+      if (f.lat === "" || f.lng === "" || !(lat >= -90 && lat <= 90) || !(lng >= -180 && lng <= 180)) throw new Error("Συμπλήρωσε σωστές συντεταγμένες.");
+      const https = u => !u || /^https:\/\//i.test(u);
+      const gallery = (f.gallery || "").split(/\s*\n\s*/).map(x => x.trim()).filter(Boolean);
+      if (![f.image_url, f.audio_el_url, f.audio_en_url, ...gallery].every(https)) throw new Error("Οι σύνδεσμοι πρέπει να ξεκινούν με https://");
+      const e = form.elements;
+      return { ...nullIfEmpty({ name_en: f.name_en, short_el: f.short_el, short_en: f.short_en, body_el: f.body_el, body_en: f.body_en, hours_el: f.hours_el, hours_en: f.hours_en,
+          image_url: f.image_url, audio_el_url: f.audio_el_url, audio_en_url: f.audio_en_url }),
+        name_el: f.name_el, category: f.category, access: f.access, lat, lng, gallery, sort: Number(f.sort || 0),
+        active: e.active.checked, ar_enabled: e.ar_enabled.checked, ar_verified: e.ar_verified.checked };
+    }
+  });
+}
+
 // ======================================================================
 // Στατιστικά χρήσης (διαχειριστής): συγκεντρωτικά, χωρίς στοιχεία επισκεπτών
 // ======================================================================
 let statsDays = 30;
 async function viewStats(main) {
   const to = D.today(), from = D.add(to, -(statsDays - 1));
-  const st = must(await sb.rpc("admin_stats", { p_from: from, p_to: to }));
+  const [st, rs] = await Promise.all([
+    sb.rpc("admin_stats", { p_from: from, p_to: to }).then(must),
+    sb.rpc("admin_roots_stats", { p_from: from, p_to: to }).then(must, () => null)
+  ]);
   const o = st.opens, totalOpens = o.tablet + o.tv + o.qr, od = st.orders, rq = st.requests;
   const pct = (a, b) => b ? Math.round(a * 100 / b) + "%" : "—";
   const tile = (label, value, sub) => `<div class="stat"><div class="small muted">${esc(label)}</div><div style="font-size:1.6rem;font-weight:800">${value}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
@@ -1130,7 +1321,13 @@ async function viewStats(main) {
   <div class="cols">
     <div class="card"><h2>Κατηγορίες υπηρεσιών (προβολές)</h2>${table(["Κατηγορία", "Προβολές"], st.categories.map(x => [esc(LBL.kind[x.kind] || x.kind), x.n]))}</div>
     <div class="card"><h2>Πληροφορίες & εστίαση (προβολές)</h2>${table(["Ενότητα", "Προβολές"], [...st.sections.map(x => [esc(x.name), x.n]), ...st.outlets.map(x => [`🍽️ ${esc(x.name)}`, x.n])].sort((a, b) => b[1] - a[1]))}</div>
-  </div>`;
+  </div>
+  ${rs ? `<div class="cols">
+    <div class="card"><h2>${esc(S.settings.roots_title || "Roots")}: διαδρομές</h2><p class="small muted">Ανοίγματα του οδηγού: <b>${rs.opens}</b></p>
+      ${table(["Διαδρομή", "Προβολές"], rs.routes.map(x => [esc(x.name), x.n]))}</div>
+    <div class="card"><h2>${esc(S.settings.roots_title || "Roots")}: σημεία</h2>
+      ${table(["Σημείο", "Προβολές", "Αφηγήσεις", "AR"], rs.pois.map(x => [esc(x.name), x.n || 0, x.audio, x.ar]))}</div>
+  </div>` : ""}`;
   $$("[data-days]", main).forEach(b => b.onclick = () => { statsDays = Number(b.dataset.days); refresh(); });
   drawBars($("#chart", main), st.daily.map(d => ({ label: D.fmt(d.day, "el", { day: "numeric", month: "short" }), value: d.opens, tip: `${D.fmt(d.day, "el", { weekday: "short", day: "numeric", month: "short" })}: ${d.opens} ανοίγματα · ${d.orders} παραγγελίες · ${d.requests} αιτήματα` })));
 }
